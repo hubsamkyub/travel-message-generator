@@ -68,6 +68,8 @@ def highlight_template_variables(template_text):
     highlighted = re.sub(pattern, replace_var, template_text)
     return highlighted
 
+# ui_helpers.py 파일에서 show_template_preview 함수를 아래 코드로 교체하세요.
+
 def show_template_preview(template, sample_variables=None):
     """템플릿 미리보기"""
     if sample_variables is None:
@@ -90,11 +92,12 @@ def show_template_preview(template, sample_variables=None):
     st.markdown("**🔍 템플릿 미리보기:**")
     
     try:
-        # 누락된 변수들에 대해 기본값 제공
+        # 템플릿에 있는 변수 중 샘플 데이터에 없는 경우, 기본값 제공
         template_vars = set(re.findall(r'\{(\w+)(?::[^}]+)?\}', template))
         
         for var in template_vars:
             if var not in sample_variables:
+                # 변수명에 금액 관련 키워드가 있으면 0, 아니면 [변수명]으로 표시
                 if any(keyword in var.lower() for keyword in ['price', 'fee', 'amount', 'balance', 'cost', 'money', 'rate', 'size', 'count']):
                     sample_variables[var] = 0
                 else:
@@ -102,16 +105,19 @@ def show_template_preview(template, sample_variables=None):
         
         preview_message = template.format(**sample_variables)
         
+        # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+        # style에 color: #212529; 를 추가하여 글자색을 어둡게 고정
         st.markdown(
-            f'<div style="background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px; font-family: \'Noto Sans KR\', sans-serif; line-height: 1.6; white-space: pre-wrap;">{preview_message}</div>',
+            f'<div style="background-color: #f8f9fa; color: #212529; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px; font-family: \'Noto Sans KR\', sans-serif; line-height: 1.6; white-space: pre-wrap;">{preview_message}</div>',
             unsafe_allow_html=True
         )
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         
     except KeyError as e:
         missing_var = str(e).strip("'")
-        st.error(f"❌ 누락된 변수: {{{missing_var}}}")
+        st.error(f"❌ 템플릿 오류: 정의되지 않은 변수 {{{missing_var}}}가 사용되었습니다. 매핑 설정을 확인해주세요.")
     except Exception as e:
-        st.error(f"❌ 미리보기 생성 오류: {str(e)}")
+        st.error(f"❌ 미리보기 생성 중 오류가 발생했습니다: {str(e)}")
 
 def show_variable_suggestions(df_columns):
     """변수 제안 표시"""
@@ -421,3 +427,36 @@ def format_currency(amount):
         return f"{int(amount):,}원"
     except (ValueError, TypeError):
         return "0원"
+    
+import re
+
+def generate_variable_name(header):
+    """엑셀 헤더를 기반으로 유효한 파이썬 변수명을 생성합니다."""
+    # 한글, 영문, 숫자만 남기고 나머지는 공백으로 변경
+    korean = re.sub(r'[^가-힣]', ' ', header).strip()
+    english = re.sub(r'[^a-zA-Z]', ' ', header).strip()
+
+    # 영문 우선, 없으면 한글 사용
+    if english:
+        # 영문을 소문자로 바꾸고 공백을 '_'로 변경
+        var_name = re.sub(r'\s+', '_', english.lower())
+    elif korean:
+        # 간단한 영어로 변환 (예시)
+        translation_map = {
+            '번호': 'num', '팀': 'team', '인원': 'count', '이름': 'name', '연락처': 'contact',
+            '그룹': 'group', '상품가': 'price', '항공권': 'ticket', '제외': 'exclude',
+            '금액': 'amount', '두바이': 'dubai', '체류': 'stay', '관광비': 'tour_fee',
+            '코카서스': 'caucasus', '취소': 'cancel', '수수료': 'fee', '환불금': 'refund',
+            '안내': 'info'
+        }
+        words = korean.split()
+        translated_words = [translation_map.get(word, word) for word in words]
+        var_name = '_'.join(translated_words)
+    else:
+        var_name = "variable"
+
+    # 최종 정리: 맨 앞 숫자는 'var_'로 시작, 유효하지 않은 문자 제거, 길이 제한
+    var_name = re.sub(r'[^a-zA-Z0-9_]', '', var_name)
+    if var_name and var_name[0].isdigit():
+        var_name = 'var_' + var_name
+    return var_name[:50] if var_name else "unnamed_variable"

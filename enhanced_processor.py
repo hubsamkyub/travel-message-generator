@@ -185,6 +185,94 @@ class EnhancedDataProcessor:
         except Exception as e:
             raise Exception(f"그룹 데이터 처리 중 오류: {str(e)}")
 
+    def process_group_data_dynamic(self, customer_df, column_mappings):
+        """그룹 데이터 처리 (동적 매핑 버전)"""
+        try:
+            self.group_data = {}
+
+            # 역방향 매핑 (var_name -> excel_col)
+            reverse_mappings = {v: k for k, v in column_mappings.items()}
+            
+            # 필수 변수에 해당하는 엑셀 컬럼명 찾기
+            team_col = reverse_mappings.get("team_name")
+            sender_group_col = reverse_mappings.get("sender_group")
+            name_col = reverse_mappings.get("name")
+
+            if not all([team_col, sender_group_col, name_col]):
+                raise ValueError("필수 변수(team_name, sender_group, name)가 컬럼과 매핑되지 않았습니다.")
+
+            # 컬럼 존재 확인
+            missing_cols = [col for col in [team_col, sender_group_col, name_col] if col not in customer_df.columns]
+            if missing_cols:
+                raise ValueError(f"매핑된 필수 컬럼이 엑셀에 없습니다: {', '.join(missing_cols)}")
+
+            # 팀과 문자 발송 그룹으로 그룹화
+            groups = customer_df.groupby([team_col, sender_group_col])
+            
+            # ... (이하 로직은 기존 process_group_data와 매우 유사하게 진행) ...
+            # 엑셀 원본 순서를 유지하기 위해 첫 번째 행의 인덱스 저장
+            group_order = {}
+            for idx, row in customer_df.iterrows():
+                team = row[team_col]
+                sender_group = row[sender_group_col]
+                if pd.notna(sender_group):
+                    group_key = (team, sender_group)
+                    if group_key not in group_order:
+                        group_order[group_key] = idx
+            
+            # 그룹을 엑셀 순서대로 정렬
+            sorted_group_keys = sorted(group_order.keys(), key=lambda x: group_order[x])
+            
+            group_id_counter = 1
+            for group_key in sorted_group_keys:
+                team_name, sender_group = group_key
+                
+                try:
+                    group_members = groups.get_group(group_key)
+                except KeyError:
+                    continue
+                
+                # 대표자 찾기 (연락처가 있는 사람 우선)
+                contact_col = reverse_mappings.get('contact')
+                if contact_col and contact_col in group_members.columns:
+                    representatives = group_members[group_members[contact_col].notna()]
+                    representative = representatives.iloc[0] if len(representatives) > 0 else group_members.iloc[0]
+                else:
+                    representative = group_members.iloc[0]
+
+                members_list = group_members[name_col].tolist()
+
+                group_info = {
+                    'group_id': f"G{group_id_counter:03d}",
+                    'team_name': str(team_name),
+                    'sender_group': str(sender_group),
+                    'sender': str(representative[name_col]),
+                    'members': [str(name) for name in members_list],
+                    'group_size': len(members_list),
+                    'group_members_text': ', '.join([f"{name}님" for name in members_list]),
+                }
+
+                # 모든 매핑된 컬럼 값을 group_info에 추가
+                for excel_col, var_name in column_mappings.items():
+                    if excel_col in customer_df.columns and excel_col in representative.index:
+                        value = representative[excel_col]
+                        # 숫자/문자 자동 변환 로직 (기존과 유사)
+                        if any(keyword in var_name.lower() for keyword in ['price', 'fee', 'amount', 'balance', 'cost', 'money', '금액', '비용', '요금']):
+                            try:
+                                clean_value = str(value).replace(',', '').replace('원', '').strip()
+                                group_info[var_name] = int(float(clean_value)) if clean_value and clean_value.replace('.', '').replace('-', '').isdigit() else 0
+                            except (ValueError, TypeError):
+                                group_info[var_name] = 0
+                        else:
+                            group_info[var_name] = str(value) if pd.notna(value) else ""
+                
+                self.group_data[group_info['group_id']] = group_info
+                group_id_counter += 1
+
+            return self.group_data
+
+        except Exception as e:
+            raise Exception(f"동적 그룹 데이터 처리 중 오류: {str(e)}")
 
 class EnhancedMessageGenerator:
     """향상된 메시지 생성 클래스"""

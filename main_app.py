@@ -252,253 +252,151 @@ def show_file_upload_step():
                     - 10행부터: 고객 데이터
                     """)
 
+# main_app.py 파일에서 show_mapping_step 함수를 아래 코드로 교체하세요.
+
 def show_mapping_step():
     st.header("2️⃣ 매핑 설정")
-    
+
     if 'uploaded_file' not in st.session_state:
         create_info_card(
-            "파일이 필요합니다",
-            "먼저 엑셀 파일을 업로드해주세요.",
-            "⚠️",
-            "warning"
+            "파일이 필요합니다", "먼저 엑셀 파일을 업로드해주세요.", "⚠️", "warning"
         )
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            if st.button("⬅️ 이전 단계로"):
-                st.session_state.current_step = 1
-                st.rerun()
+        if st.button("⬅️ 이전 단계로"):
+            st.session_state.current_step = 1
+            st.rerun()
         return
-    
-    # 매핑 안내 정보
+
     create_info_card(
         "매핑 설정 안내",
         """
-        • **고정 정보**: 상품명, 환율 등이 있는 **셀 주소** 입력 (예: D2, F3)
-        • **테이블 설정**: 헤더와 데이터가 시작되는 **행 번호** 입력
-        • **컬럼 매핑**: 엑셀 컬럼과 내부 변수를 연결
+        • **기본 설정**: 고정 정보의 셀 주소와 데이터 테이블의 헤더 행 번호를 입력합니다.
+        • **동적 컬럼 매핑**: 엑셀의 각 컬럼에 사용할 **변수명을 지정**합니다. 이 변수명은 템플릿에서 `{변수명}` 형태로 사용됩니다.
+        • **필수 매핑**: `team_name`, `sender_group`, `name` 변수는 반드시 하나 이상의 컬럼과 매핑되어야 합니다.
         """,
         "🔧"
     )
+
+    # 탭 구조를 2개로 재구성
+    tab1, tab2 = st.tabs(["⚙️ 기본 설정 (고정 정보, 테이블)", "🔗 동적 컬럼 매핑"])
     
-    # 진행 단계 표시
-    mapping_steps = ["고정 정보 매핑", "테이블 구조 설정", "컬럼 매핑"]
-    show_processing_steps(mapping_steps, 1)
-    
-    # 탭으로 구분
-    tab1, tab2 = st.tabs(["🔧 고정 정보 매핑", "📊 테이블 컬럼 매핑"])
-    
+    # 탭1: 고정 정보 및 테이블 설정
     with tab1:
         st.markdown("### 📍 고정 정보 셀 주소 설정")
-        st.markdown("엑셀에서 고정 정보가 있는 셀의 주소를 입력하세요. (예: A1, D2, F3)")
-        
         col1, col2 = st.columns(2)
-        
         with col1:
-            product_name_cell = st.text_input("🏷️ 상품명", value="D2", help="상품명이 있는 셀 주소")
-            payment_due_cell = st.text_input("📅 잔금완납일", value="D3", help="완납일이 있는 셀 주소")
-            base_exchange_cell = st.text_input("💱 기준환율", value="F2", help="기준환율이 있는 셀 주소")
-        
+            product_name_cell = st.text_input("🏷️ 상품명", value=st.session_state.get("product_name_cell", "D2"))
+            payment_due_cell = st.text_input("📅 잔금완납일", value=st.session_state.get("payment_due_cell", "D3"))
         with col2:
-            current_exchange_cell = st.text_input("📈 현재환율", value="F3", help="현재환율이 있는 셀 주소")
-            exchange_diff_cell = st.text_input("📊 환율차액", value="F4", help="환율차액이 있는 셀 주소")
-            company_burden_cell = st.text_input("🏢 당사부담금", value="F5", help="당사부담금이 있는 셀 주소")
-        
-        # 고정 정보 미리보기
-        if st.button("🔍 고정 정보 미리보기", type="secondary"):
-            fixed_mapping = {
-                "product_name": product_name_cell,
-                "payment_due_date": payment_due_cell,
-                "base_exchange_rate": base_exchange_cell,
-                "current_exchange_rate": current_exchange_cell,
-                "exchange_rate_diff": exchange_diff_cell,
-                "company_burden": company_burden_cell
-            }
-            
-            with st.container():
-                st.markdown("**🔍 추출된 고정 정보:**")
-                cols = st.columns(2)
-                
-                for i, (key, cell_addr) in enumerate(fixed_mapping.items()):
-                    value = get_cell_value(st.session_state.sheet_data, cell_addr)
-                    
-                    with cols[i % 2]:
-                        if value:
-                            st.success(f"**{key}**: {value} (셀: {cell_addr})")
-                        else:
-                            st.warning(f"**{key}**: 값 없음 (셀: {cell_addr})")
-    
-    with tab2:
+            base_exchange_cell = st.text_input("💱 기준환율", value=st.session_state.get("base_exchange_cell", "F2"))
+            current_exchange_cell = st.text_input("📈 현재환율", value=st.session_state.get("current_exchange_cell", "F3"))
+
         st.markdown("### 📊 테이블 구조 설정")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            header_row = st.number_input(
-                "📋 헤더 행 번호", 
-                min_value=1, max_value=50, value=9,
-                help="컬럼명이 있는 행 번호 (1부터 시작)"
-            )
-        with col2:
-            data_start_row = st.number_input(
-                "📊 데이터 시작 행 번호", 
-                min_value=1, max_value=50, value=10,
-                help="실제 데이터가 시작되는 행 번호"
-            )
-        
-        # 테이블 데이터 미리보기
+        header_row = st.number_input(
+            "📋 헤더 행 번호 (컬럼명이 있는 행)", min_value=1, max_value=50, value=st.session_state.get("header_row", 9),
+            help="1부터 시작하는 행 번호를 입력하세요."
+        )
+
+        # UI 상태 유지를 위해 세션에 값 저장
+        st.session_state.product_name_cell = product_name_cell
+        st.session_state.payment_due_cell = payment_due_cell
+        st.session_state.base_exchange_cell = base_exchange_cell
+        st.session_state.current_exchange_cell = current_exchange_cell
+        st.session_state.header_row = header_row
+
+    # 탭2: 동적 컬럼 매핑
+    with tab2:
+        st.markdown("### 🔗 동적 컬럼 매핑")
+        st.markdown("엑셀의 각 컬럼에 사용할 변수명을 지정하거나 수정하세요.")
+
         try:
-            df_table = pd.read_excel(st.session_state.uploaded_file, 
-                                   sheet_name=st.session_state.selected_sheet, 
-                                   header=header_row-1)
-            
-            st.markdown("**📊 테이블 데이터 미리보기:**")
-            st.dataframe(df_table.head(10), use_container_width=True)
-            
-            # 컬럼 매핑 설정
-            st.markdown("---")
-            st.markdown("### 🔗 컬럼 매핑 설정")
-            st.markdown("엑셀의 컬럼을 내부 변수와 연결하세요.")
-            
+            # 헤더 행 번호를 기준으로 데이터프레임 다시 읽기
+            df_table = pd.read_excel(
+                st.session_state.uploaded_file,
+                sheet_name=st.session_state.selected_sheet,
+                header=header_row - 1
+            ).dropna(how='all', axis=1) # 값이 모두 비어있는 컬럼은 무시
+
             available_columns = df_table.columns.tolist()
+
+            # 동적 매핑 초기화 또는 자동 재생성
+            if 'dynamic_mappings' not in st.session_state or st.button("🔄 변수명 자동 생성"):
+                st.session_state.dynamic_mappings = {col: generate_variable_name(str(col)) for col in available_columns}
+                st.success("✅ 변수명이 자동으로 생성되었습니다.")
+
+            # UI 컬럼 헤더
+            col_h1, col_h2, col_h3 = st.columns([2, 2, 1])
+            col_h1.markdown("**엑셀 컬럼**")
+            col_h2.markdown("**프로그램 변수명**")
+            col_h3.markdown("**필수 지정**")
             
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**🔴 필수 컬럼 (반드시 설정):**")
-                team_col = st.selectbox(
-                    "👥 팀명 컬럼", available_columns, 
-                    index=get_column_index(available_columns, "팀"),
-                    help="팀을 구분하는 컬럼"
+            # 동적 매핑 UI 생성
+            final_column_mappings = {}
+            for col_header in available_columns:
+                c1, c2, c3 = st.columns([2, 2, 1])
+                c1.markdown(f"`{col_header}`")
+                
+                # 사용자가 변수명 입력
+                var_name = c2.text_input(
+                    f"var_for_{col_header}",
+                    value=st.session_state.dynamic_mappings.get(col_header, ""),
+                    label_visibility="collapsed"
                 )
-                sender_group_col = st.selectbox(
-                    "📱 발송그룹 컬럼", available_columns,
-                    index=get_column_index(available_columns, "발송"),
-                    help="문자 발송 그룹을 구분하는 컬럼"
-                )
-                name_col = st.selectbox(
-                    "👤 이름 컬럼", available_columns,
-                    index=get_column_index(available_columns, "이름"),
-                    help="고객 이름이 있는 컬럼"
-                )
-            
-            with col2:
-                st.markdown("**🔵 선택 컬럼 (선택사항):**")
-                contact_col = st.selectbox(
-                    "📞 연락처 컬럼", ["선택 안함"] + available_columns,
-                    index=get_column_index(["선택 안함"] + available_columns, "연락"),
-                    help="연락처 정보가 있는 컬럼"
-                )
-                balance_col = st.selectbox(
-                    "💰 잔금 컬럼", ["선택 안함"] + available_columns,
-                    index=get_column_index(["선택 안함"] + available_columns, "잔금"),
-                    help="잔금 정보가 있는 컬럼"
-                )
-                account_col = st.selectbox(
-                    "🏦 계좌 컬럼", ["선택 안함"] + available_columns,
-                    index=get_column_index(["선택 안함"] + available_columns, "계좌"),
-                    help="입금 계좌 정보가 있는 컬럼"
-                )
-            
-            # 추가 선택 컬럼들
-            st.markdown("**➕ 추가 선택 컬럼:**")
-            
-            col_a, col_b, col_c = st.columns(3)
-            with col_a:
-                price_col = st.selectbox(
-                    "💴 상품가 컬럼", ["선택 안함"] + available_columns,
-                    index=get_column_index(["선택 안함"] + available_columns, "상품"),
-                    help="상품가 정보"
-                )
-            with col_b:
-                fee_col = st.selectbox(
-                    "💱 환차금 컬럼", ["선택 안함"] + available_columns,
-                    index=get_column_index(["선택 안함"] + available_columns, "환"),
-                    help="환차금 정보"
-                )
-            with col_c:
-                deposit_col = st.selectbox(
-                    "💰 예약금 컬럼", ["선택 안함"] + available_columns,
-                    index=get_column_index(["선택 안함"] + available_columns, "예약"),
-                    help="예약금 정보"
-                )
-            
-            # 매핑 정보 저장
-            mapping_data = {
+                
+                # 필수 변수 지정
+                with c3:
+                    is_team = st.checkbox("팀", key=f"team_{col_header}", help="이 컬럼을 'team_name'으로 지정합니다.")
+                    is_group = st.checkbox("그룹", key=f"group_{col_header}", help="이 컬럼을 'sender_group'으로 지정합니다.")
+                    is_name = st.checkbox("이름", key=f"name_{col_header}", help="이 컬럼을 'name'으로 지정합니다.")
+
+                # 체크박스에 따라 변수명 강제 지정
+                if is_team: var_name = "team_name"
+                if is_group: var_name = "sender_group"
+                if is_name: var_name = "name"
+                
+                if var_name:
+                    final_column_mappings[col_header] = var_name
+
+            # 필수 변수 매핑 확인
+            mapped_vars = final_column_mappings.values()
+            missing_required = [v for v in ['team_name', 'sender_group', 'name'] if v not in mapped_vars]
+            if missing_required:
+                st.error(f"**필수 변수 미지정:** `{', '.join(missing_required)}`을(를) 컬럼과 매핑해주세요.")
+
+            # 최종 매핑 정보 구성
+            st.session_state.mapping_data = {
                 "fixed_data_mapping": {
                     "product_name": product_name_cell,
                     "payment_due_date": payment_due_cell,
                     "base_exchange_rate": base_exchange_cell,
                     "current_exchange_rate": current_exchange_cell,
-                    "exchange_rate_diff": exchange_diff_cell,
-                    "company_burden": company_burden_cell
                 },
-                "table_settings": {
-                    "header_row": header_row,
-                    "data_start_row": data_start_row
-                },
-                "required_columns": {
-                    team_col: "team_name",
-                    sender_group_col: "sender_group",
-                    name_col: "name"
-                },
-                "optional_columns": {}
+                "table_settings": {"header_row": header_row},
+                "column_mappings": final_column_mappings
             }
             
-            # 선택 컬럼 추가
-            optional_mappings = [
-                (contact_col, "contact"),
-                (balance_col, "total_balance"),
-                (account_col, "bank_account"),
-                (price_col, "product_price"),
-                (fee_col, "exchange_fee"),
-                (deposit_col, "deposit")
-            ]
-            
-            for col, var_name in optional_mappings:
-                if col != "선택 안함":
-                    mapping_data["optional_columns"][col] = var_name
-            
-            st.session_state.mapping_data = mapping_data
-            
-            # 매핑 요약 표시
-            st.markdown("---")
-            st.markdown("### 📋 매핑 요약")
-            
-            col_summary1, col_summary2 = st.columns(2)
-            
-            with col_summary1:
-                st.markdown("**필수 매핑:**")
-                st.write(f"• 팀명: `{team_col}`")
-                st.write(f"• 발송그룹: `{sender_group_col}`")
-                st.write(f"• 이름: `{name_col}`")
-            
-            with col_summary2:
-                st.markdown("**선택 매핑:**")
-                for col, var_name in optional_mappings:
-                    if col != "선택 안함":
-                        st.write(f"• {var_name}: `{col}`")
-            
-            # 네비게이션 버튼
-            st.markdown("---")
-            col1, col2 = st.columns([1, 1])
-            with col1:
-                if st.button("⬅️ 이전 단계", use_container_width=True):
-                    st.session_state.current_step = 1
-                    st.rerun()
-            with col2:
-                if st.button("➡️ 다음 단계: 템플릿 설정", type="primary", use_container_width=True):
-                    st.session_state.current_step = 3
-                    st.success("✅ 템플릿 설정 단계로 이동합니다!")
-                    st.rerun()
-            
-        except Exception as e:
-            show_error_details(e, "테이블 데이터 읽기 중")
-            st.markdown("""
-            **💡 해결 방법:**
-            - 헤더 행 번호가 올바른지 확인
-            - 선택한 시트에 데이터가 있는지 확인
-            - 엑셀 파일 구조를 다시 확인
-            """)
+            with st.expander("📋 현재 매핑 요약 보기"):
+                st.json(st.session_state.mapping_data)
 
+        except Exception as e:
+            show_error_details(e, "테이블 데이터를 읽는 중")
+            st.markdown("**💡 해결 방법:**\n- 헤더 행 번호가 올바른지 확인하세요.\n- 선택한 시트에 데이터가 있는지 확인하세요.")
+            missing_required = ['team_name'] # 다음 단계 버튼 비활성화를 위해 임의값 설정
+
+    # 네비게이션 버튼
+    st.markdown("---")
+    col_nav1, col_nav2 = st.columns([1, 1])
+    with col_nav1:
+        if st.button("⬅️ 이전 단계", use_container_width=True):
+            st.session_state.current_step = 1
+            st.rerun()
+    with col_nav2:
+        # 필수 변수가 모두 매핑되었을 때만 다음 단계 버튼 활성화
+        is_disabled = 'missing_required' in locals() and bool(missing_required)
+        if st.button("➡️ 다음 단계: 템플릿 설정", type="primary", use_container_width=True, disabled=is_disabled):
+            st.session_state.current_step = 3
+            st.success("✅ 템플릿 설정 단계로 이동합니다!")
+            st.rerun()
+            
 def preview_fixed_data(fixed_mapping):
     """고정 정보 미리보기"""
     try:
@@ -851,13 +749,12 @@ def process_data_and_generate_messages():
         progress_bar.progress(40)
         
         # 3. 그룹 데이터 생성
-        group_data = data_processor.process_group_data(
+        group_data = data_processor.process_group_data_dynamic(
             customer_df,
-            st.session_state.mapping_data["required_columns"],
-            st.session_state.mapping_data["optional_columns"]
+            st.session_state.mapping_data["column_mappings"]
         )
         st.session_state.group_data = group_data
-        
+
         status_text.text(f"👥 {len(group_data)}개 그룹 생성 완료...")
         progress_bar.progress(60)
         
@@ -882,27 +779,15 @@ def process_data_and_generate_messages():
         📊 **처리 결과:**
         - 📁 처리된 그룹 수: **{len(group_data)}개**
         - 📝 생성된 메시지 수: **{result['total_count']}개**
-        - 🔧 사용된 변수 수: **{len(fixed_data) + 5}개 이상**
         """
-        
-        if result.get('has_additional_amount'):
-            success_info += "\n\n⚠️ **추가금액**이 포함된 그룹이 있습니다. 메시지를 확인해주세요."
         
         st.success(success_info)
         
-        # 진행바와 상태 텍스트 제거
         progress_bar.empty()
         status_text.empty()
-        
+
     except Exception as e:
-        st.error(f"❌ **데이터 처리 중 오류 발생**\n\n{str(e)}")
-        
-        # 상세 오류 정보 (개발자용)
-        with st.expander("🔧 상세 오류 정보 (개발자용)"):
-            st.code(f"""
-오류 타입: {type(e).__name__}
-오류 메시지: {str(e)}
-            """)
+        show_error_details(e, "데이터 처리 및 메시지 생성 중")
         raise
 
 def show_results_step():
