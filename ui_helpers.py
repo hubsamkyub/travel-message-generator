@@ -70,8 +70,14 @@ def highlight_template_variables(template_text):
 
 # ui_helpers.py 파일에서 show_template_preview 함수를 아래 코드로 교체하세요.
 
+# ui_helpers.py 파일에서 show_template_preview 함수를 아래 코드로 교체하세요.
+
 def show_template_preview(template, sample_variables=None):
-    """템플릿 미리보기 (포맷팅 오류 해결)"""
+    """
+    템플릿 미리보기 (st.text_area를 사용하여 좌우 대칭 개선)
+    """
+    st.markdown("##### 🔍 템플릿 미리보기")
+
     if sample_variables is None:
         # 기본 샘플 데이터 정의
         sample_variables = {
@@ -87,8 +93,6 @@ def show_template_preview(template, sample_variables=None):
             'dubai_tour_fee': 849000, 'cancel_cost': 408200
         }
 
-    st.markdown("**🔍 템플릿 미리보기:**")
-
     try:
         # 템플릿에만 있고 샘플 데이터에는 없는 변수들을 위해 기본값 추가
         template_vars = set(re.findall(r'\{(\w+)(?::[^}]+)?\}', template))
@@ -99,28 +103,30 @@ def show_template_preview(template, sample_variables=None):
                 else:
                     sample_variables[var] = f"[{var}]"
 
-        # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ [핵심 수정] 포맷팅 오류 방지 로직 ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-        # 템플릿에서 숫자 포맷팅(예: `{var:,}`)이 사용된 변수 목록을 찾음
+        # 숫자 포맷팅(예: {var:,})이 사용된 변수 목록을 찾아 숫자 타입으로 변환
         number_format_vars = set(re.findall(r'\{(\w+):[^}]*[,d][^}]*\}', template))
-        
         for var_name in number_format_vars:
             if var_name in sample_variables:
-                # 해당 변수의 값이 숫자가 아니면 0으로 강제 변환하여 오류 방지
                 if not isinstance(sample_variables[var_name], (int, float)):
                     sample_variables[var_name] = 0
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         preview_message = template.format(**sample_variables)
-        
-        # 글자색을 어둡게 고정하여 다크모드에서도 잘 보이도록 함
-        st.markdown(
-            f'<div style="background-color: #f8f9fa; color: #212529; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px; font-family: \'Noto Sans KR\', sans-serif; line-height: 1.6; white-space: pre-wrap;">{preview_message}</div>',
-            unsafe_allow_html=True
+
+        # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ [핵심 수정 부분] ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+        # st.markdown 대신 st.text_area를 사용하여 좌우 대칭 UI 구현
+        st.text_area(
+            label="Template Preview Area",
+            value=preview_message,
+            height=500,  # 좌측 편집기와 동일한 높이로 설정
+            disabled=True,  # 수정 불가능하도록 설정
+            label_visibility="collapsed",
+            help="템플릿의 실시간 미리보기가 표시됩니다."
         )
-        
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     except KeyError as e:
         missing_var = str(e).strip("'")
-        st.error(f"❌ 템플릿 오류: 정의되지 않은 변수 {{{missing_var}}}가 사용되었습니다. 매핑 설정을 확인해주세요.")
+        st.error(f"❌ 템플릿 오류: 정의되지 않은 변수 {{{missing_var}}}가 사용되었습니다.")
     except Exception as e:
         st.error(f"❌ 미리보기 생성 중 오류가 발생했습니다: {str(e)}")
         
