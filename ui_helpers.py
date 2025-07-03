@@ -70,59 +70,51 @@ def highlight_template_variables(template_text):
 
 # ui_helpers.py 파일에서 show_template_preview 함수를 아래 코드로 교체하세요.
 
-# ui_helpers.py 파일에서 show_template_preview 함수를 아래 코드로 교체하세요.
-
-def show_template_preview(template, sample_variables=None):
+def show_template_preview(template, preview_data):
     """
-    템플릿 미리보기 (st.text_area를 사용하여 좌우 대칭 개선)
+    템플릿 미리보기 (실제 데이터를 받아 미리보기를 생성)
     """
     st.markdown("##### 🔍 템플릿 미리보기")
 
-    if sample_variables is None:
-        # 기본 샘플 데이터 정의
-        sample_variables = {
-            'product_name': '해외 힐링 7일', 'payment_due_date': '2025-07-31',
-            'base_exchange_rate': 1300, 'current_exchange_rate': 1350,
-            'exchange_rate_diff': 50, 'company_burden': 20,
-            'team_name': '1팀', 'sender_group': 'A그룹',
-            'group_members_text': '홍길동님, 김민준님', 'group_size': 2,
-            'total_balance': 3480000, 'bank_account': '우리은행 123-456-7890',
-            'additional_fee_per_person': 70, 'name': '홍길동',
-            'contact': '010-1234-5678', 'product_price': 2000000,
-            'total_refund': 1257200, 'person_refund': 628600,
-            'dubai_tour_fee': 849000, 'cancel_cost': 408200
-        }
+    # preview_data가 없는 경우를 대비한 안전장치
+    if not preview_data:
+        st.warning("미리보기를 생성할 데이터가 없습니다. 매핑 설정을 확인해주세요.")
+        # 빈 박스라도 보여주어 레이아웃 유지
+        st.text_area("Template Preview Area", "미리보기 생성 불가", height=500, disabled=True, label_visibility="collapsed")
+        return
 
     try:
-        # 템플릿에만 있고 샘플 데이터에는 없는 변수들을 위해 기본값 추가
+        # 템플릿에만 있고 데이터에는 없는 변수들을 위해 기본값 추가
         template_vars = set(re.findall(r'\{(\w+)(?::[^}]+)?\}', template))
         for var in template_vars:
-            if var not in sample_variables:
-                if any(keyword in var.lower() for keyword in ['price', 'fee', 'amount', 'balance', 'cost', 'money', 'rate', 'size', 'count', '환불', '금액']):
-                    sample_variables[var] = 0
-                else:
-                    sample_variables[var] = f"[{var}]"
+            if var not in preview_data:
+                preview_data[var] = f"[{var}]"
 
-        # 숫자 포맷팅(예: {var:,})이 사용된 변수 목록을 찾아 숫자 타입으로 변환
+        # 숫자 포맷팅({var:,})이 사용된 변수는 숫자 타입으로 변환 (오류 방지)
         number_format_vars = set(re.findall(r'\{(\w+):[^}]*[,d][^}]*\}', template))
         for var_name in number_format_vars:
-            if var_name in sample_variables:
-                if not isinstance(sample_variables[var_name], (int, float)):
-                    sample_variables[var_name] = 0
+            if var_name in preview_data:
+                try:
+                    # 값이 문자열일 경우, 숫자 부분만 추출하여 변환
+                    if isinstance(preview_data[var_name], str):
+                        cleaned_val = re.sub(r'[^\d.-]', '', preview_data[var_name])
+                        preview_data[var_name] = int(float(cleaned_val)) if cleaned_val else 0
+                    elif not isinstance(preview_data[var_name], (int, float)):
+                        preview_data[var_name] = 0
+                except (ValueError, TypeError):
+                    preview_data[var_name] = 0 # 변환 실패 시 0으로 처리
 
-        preview_message = template.format(**sample_variables)
+        preview_message = template.format(**preview_data)
 
-        # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ [핵심 수정 부분] ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-        # st.markdown 대신 st.text_area를 사용하여 좌우 대칭 UI 구현
+        # st.text_area를 사용하여 좌우 대칭 UI 및 안정적인 미리보기 제공
         st.text_area(
             label="Template Preview Area",
             value=preview_message,
-            height=500,  # 좌측 편집기와 동일한 높이로 설정
-            disabled=True,  # 수정 불가능하도록 설정
+            height=500,
+            disabled=True,
             label_visibility="collapsed",
-            help="템플릿의 실시간 미리보기가 표시됩니다."
+            help="실제 엑셀의 첫 번째 데이터를 기반으로 생성된 미리보기입니다."
         )
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     except KeyError as e:
         missing_var = str(e).strip("'")

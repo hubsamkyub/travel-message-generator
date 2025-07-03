@@ -460,69 +460,84 @@ def show_template_step():
             st.rerun()
         return
 
-    # --- 1. 변수 목록 준비 ---
-    fixed_vars = list(st.session_state.mapping_data.get('fixed_data_mapping', {}).keys())
+    # --- 1. 변수 목록 및 미리보기 데이터 준비 ---
+    fixed_data_mapping = st.session_state.mapping_data.get('fixed_data_mapping', {})
     column_mappings = st.session_state.mapping_data.get('column_mappings', {})
-    dynamic_vars = list(column_mappings.values())
-    calculated_vars = ['group_members_text', 'group_size', 'additional_fee_per_person']
-    all_available_vars = sorted(list(set(fixed_vars + dynamic_vars + calculated_vars)))
+    header_row = st.session_state.mapping_data.get('table_settings', {}).get('header_row', 1)
+
+    # 미리보기에 사용할 실제 데이터 생성
+    preview_variables = {}
+    try:
+        # 가. 고정 데이터 추가
+        for var_name, cell in fixed_data_mapping.items():
+            preview_variables[var_name] = get_cell_value(st.session_state.sheet_data, cell)
+
+        # 나. 엑셀 첫 번째 행 데이터 추가
+        df_table = pd.read_excel(
+            st.session_state.uploaded_file,
+            sheet_name=st.session_state.selected_sheet,
+            header=header_row - 1
+        )
+        first_row = df_table.iloc[0] # 첫 번째 데이터 행
+
+        for excel_col, var_name in column_mappings.items():
+            if excel_col in first_row:
+                preview_variables[var_name] = first_row[excel_col]
+
+        # 다. 자동 계산 변수 (예시값) 추가
+        preview_variables['group_members_text'] = f"{preview_variables.get('name', '아무개')}님 외 1명"
+        preview_variables['group_size'] = 2
+        preview_variables['additional_fee_per_person'] = 70 # 예시 값
+
+    except Exception as e:
+        st.warning(f"미리보기 데이터 생성 중 오류 발생: {e}")
 
 
-    # --- 2. 새로운 상단 레이아웃: [좌] 편집기 | [우] 미리보기 ---
-    st.markdown("##### 📝 메시지 템플릿 편집")
+    # --- 2. 상단 레이아웃: [좌] 편집기 | [우] 미리보기 ---
     editor_col, preview_col = st.columns(2, gap="large")
 
-    # [좌] 템플릿 편집기
     with editor_col:
+        st.markdown("##### 📝 메시지 템플릿 편집")
         default_template = st.session_state.get('template', "[여행처럼]\n안녕하세요, {product_name} 안내입니다.")
-        template = st.text_area(
-            "Template Editor",  # Label을 간소화
-            value=default_template,
-            height=500,
-            key="template_editor",
-            label_visibility="collapsed",
-            help="템플릿을 작성하고 오른쪽에서 실시간 미리보기를 확인하세요."
-        )
+        template = st.text_area("Template Editor", value=default_template, height=500, key="template_editor", label_visibility="collapsed")
         st.session_state.template = template
 
-    # [우] 실시간 미리보기
     with preview_col:
-        # 미리보기 함수 호출
-        show_template_preview(template)
+        # 생성된 실제 데이터를 미리보기 함수에 전달
+        show_template_preview(template, preview_variables)
 
 
     # --- 3. 하단 레이아웃: 변수 목록 및 빠른 삽입 ---
     st.markdown("---")
     st.markdown("##### 💡 사용 가능한 변수 및 빠른 삽입")
     
-    # 탭으로 변수 목록 정리
+    # (변수 목록 표시는 이전과 동일)
+    fixed_vars = list(fixed_data_mapping.keys())
+    dynamic_vars = list(column_mappings.values())
+    calculated_vars = ['group_members_text', 'group_size', 'additional_fee_per_person']
+    all_available_vars = sorted(list(set(fixed_vars + dynamic_vars + calculated_vars)))
+
     var_tabs = st.tabs(["**엑셀 컬럼**", "**고정 정보**", "**자동 계산**"])
-
-    with var_tabs[0]: # 엑셀 컬럼 탭
-        st.markdown("2단계에서 매핑한 `엑셀 컬럼 → {변수명}` 목록입니다.")
-        # 키(엑셀컬럼)와 값(변수명)을 함께 표시하도록 개선
+    with var_tabs[0]:
+        st.markdown("`엑셀 컬럼 → {변수명}` 목록입니다.")
         for excel_col, var_name in sorted(column_mappings.items(), key=lambda item: item[1]):
-             # st.text()를 사용해 더 깔끔하게 표시
             st.text(f"'{excel_col}' → {{{var_name}}}")
-
-    with var_tabs[1]: # 고정 정보 탭
-        st.markdown("2단계 기본 설정에서 매핑된 변수입니다.")
+    # (이하 고정 정보, 자동 계산 탭 동일)
+    with var_tabs[1]:
+        st.markdown("기본 설정에서 매핑된 변수입니다.")
         for var in sorted(fixed_vars):
             st.code(f"{{{var}}}", language="text")
-
-    with var_tabs[2]: # 자동 계산 탭
+    with var_tabs[2]:
         st.markdown("시스템에서 자동으로 계산되는 변수입니다.")
         for var in sorted(calculated_vars):
             st.code(f"{{{var}}}", language="text")
-            
-    # 빠른 삽입 기능
+
     with st.expander("⚡ 빠른 변수 삽입 (클릭하여 복사)"):
-        quick_cols = st.columns(5) # 5열로 변경하여 더 많은 변수 표시
+        quick_cols = st.columns(5)
         for i, var_name in enumerate(all_available_vars):
             if quick_cols[i % 5].button(f"`{{{var_name}}}`", use_container_width=True, help=f"{{{var_name}}} 복사"):
                 st.info(f"아래 텍스트를 복사하여 사용하세요:")
                 st.code(f"{{{var_name}}}", language="text")
-
 
     # --- 4. 네비게이션 버튼 ---
     st.markdown("---")
@@ -530,12 +545,11 @@ def show_template_step():
     if nav_cols[0].button("⬅️ 이전 단계 (매핑 설정)", use_container_width=True):
         st.session_state.current_step = 2
         st.rerun()
-    
     if nav_cols[1].button("➡️ 다음 단계 (메시지 생성)", type="primary", use_container_width=True):
         st.session_state.current_step = 4
         st.success("✅ 메시지 생성 단계로 이동합니다!")
         st.rerun()
-  
+         
 def show_message_generation_step():
     st.header("4️⃣ 메시지 생성")
     
