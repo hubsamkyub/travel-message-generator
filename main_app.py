@@ -444,142 +444,87 @@ def get_column_index(columns, search_term):
             return i
     return 0
 
+# main_app.py 파일에서 show_template_step 함수를 아래 코드로 교체하세요.
+
 def show_template_step():
     st.header("3️⃣ 템플릿 설정")
 
-    # 매핑 데이터가 없으면 이전 단계로 이동하도록 안내
+    # 매핑 데이터 유효성 검사
     if 'mapping_data' not in st.session_state or not st.session_state.mapping_data.get('column_mappings'):
         create_info_card(
             "매핑 설정이 필요합니다",
-            "이전 단계에서 엑셀 컬럼과 변수 매핑을 먼저 완료해주세요.",
-            "⚠️",
-            "warning"
+            "이전 단계에서 엑셀 컬럼과 변수 매핑을 먼저 완료해주세요.", "⚠️", "warning"
         )
         if st.button("⬅️ 이전 단계로"):
             st.session_state.current_step = 2
             st.rerun()
         return
 
-    # 템플릿 작성 가이드 안내
-    create_info_card(
-        "템플릿 작성 가이드",
-        """
-        • **변수 사용**: 오른쪽 '사용 가능한 변수' 목록을 참고하여 `{변수명}` 형태로 사용하세요.
-        • **숫자 포맷**: 금액, 개수 등 숫자 변수는 `{변수명:,}` 형태로 콤마(,)를 표시할 수 있습니다.
-        • **미리보기**: 템플릿을 수정하면 실시간으로 미리보기에 반영됩니다.
-        """, "📝"
-    )
-
-    # --- 동적으로 사용 가능한 변수 목록 생성 ---
-    # 1. 고정 정보 변수 (기본 설정에서 매핑)
+    # --- 1. 변수 목록 준비 ---
     fixed_vars = list(st.session_state.mapping_data.get('fixed_data_mapping', {}).keys())
-    # 2. 엑셀 컬럼 변수 (동적 매핑)
-    dynamic_vars = list(st.session_state.mapping_data.get('column_mappings', {}).values())
-    # 3. 자동 계산 변수 (미리 정의)
+    column_mappings = st.session_state.mapping_data.get('column_mappings', {})
+    dynamic_vars = list(column_mappings.values())
     calculated_vars = ['group_members_text', 'group_size', 'additional_fee_per_person']
-    # 4. 모든 변수를 합치고 중복 제거 후 정렬
     all_available_vars = sorted(list(set(fixed_vars + dynamic_vars + calculated_vars)))
 
 
-    # 메인 레이아웃 (템플릿 편집기 | 변수 목록)
-    col1, col2 = st.columns([3, 2])
+    # --- 2. 새로운 상단 레이아웃: [좌] 편집기 | [우] 미리보기 ---
+    st.markdown("##### 📝 메시지 템플릿 편집")
+    editor_col, preview_col = st.columns(2, gap="large")
 
-    # 왼쪽 컬럼: 템플릿 편집기
-    with col1:
-        st.markdown("### 📝 메시지 템플릿 편집")
-        
-        # 기본 템플릿 정의
-        default_template = st.session_state.get('template', """[여행처럼]
-잔금 입금 안내
-
-안녕하세요, 여행처럼입니다.
-{product_name} 예약 건 관련하여 잔금 결제를 요청드립니다.
-
-[결제내역]
-{group_members_text}
-총 잔금: {total_balance:,}원
-
-완납일: {payment_due_date}
-입금계좌: {bank_account}
-
-감사합니다.
-""")
-        
-        # 템플릿 편집기 (text_area)
+    # [좌] 템플릿 편집기
+    with editor_col:
+        default_template = st.session_state.get('template', "[여행처럼]\n안녕하세요, {product_name} 안내입니다.")
         template = st.text_area(
-            "템플릿 내용",
+            "Template Editor",  # Label을 간소화
             value=default_template,
-            height=600,
+            height=500,
             key="template_editor",
-            help="오른쪽 변수 목록을 사용하여 템플릿을 작성하세요."
+            label_visibility="collapsed",
+            help="템플릿을 작성하고 오른쪽에서 실시간 미리보기를 확인하세요."
         )
-        # 수정한 내용을 세션 상태에 즉시 저장
         st.session_state.template = template
-        
-        # 템플릿 관리 버튼
-        btn_cols = st.columns(3)
-        if btn_cols[0].button("🔄 기본값 복원"):
-            st.session_state.template = default_template
-            st.rerun()
-        
-        # 다운로드 버튼은 st.download_button 내에서 파일 내용을 생성해야 함
-        btn_cols[1].download_button(
-            label="💾 템플릿 저장",
-            data=template.encode('utf-8'),
-            file_name=f"template_{datetime.now().strftime('%Y%m%d')}.txt",
-            mime="text/plain",
-        )
 
-        # 템플릿 불러오기
-        uploaded_template = btn_cols[2].file_uploader("📁 템플릿 열기", type=['txt'])
-        if uploaded_template is not None:
-            st.session_state.template = uploaded_template.read().decode('utf-8')
-            st.success("템플릿을 불러왔습니다.")
-            st.rerun()
+    # [우] 실시간 미리보기
+    with preview_col:
+        # 미리보기 함수 호출
+        show_template_preview(template)
 
 
-    # 오른쪽 컬럼: 사용 가능한 변수 및 빠른 삽입
-    with col2:
-        st.markdown("### 💡 사용 가능한 변수")
-        
-        # 탭으로 변수 목록을 깔끔하게 정리
-        var_tab1, var_tab2, var_tab3 = st.tabs(["**고정 정보**", "**엑셀 컬럼**", "**자동 계산**"])
+    # --- 3. 하단 레이아웃: 변수 목록 및 빠른 삽입 ---
+    st.markdown("---")
+    st.markdown("##### 💡 사용 가능한 변수 및 빠른 삽입")
+    
+    # 탭으로 변수 목록 정리
+    var_tabs = st.tabs(["**엑셀 컬럼**", "**고정 정보**", "**자동 계산**"])
 
-        with var_tab1:
-            st.markdown("기본 설정에서 매핑된 변수입니다.")
-            for var in fixed_vars:
-                st.code(f"{{{var}}}", language="text")
+    with var_tabs[0]: # 엑셀 컬럼 탭
+        st.markdown("2단계에서 매핑한 `엑셀 컬럼 → {변수명}` 목록입니다.")
+        # 키(엑셀컬럼)와 값(변수명)을 함께 표시하도록 개선
+        for excel_col, var_name in sorted(column_mappings.items(), key=lambda item: item[1]):
+             # st.text()를 사용해 더 깔끔하게 표시
+            st.text(f"'{excel_col}' → {{{var_name}}}")
 
-        with var_tab2:
-            st.markdown("동적 매핑 설정에서 지정한 변수입니다.")
-            for var in sorted(dynamic_vars):
-                st.code(f"{{{var}}}", language="text")
+    with var_tabs[1]: # 고정 정보 탭
+        st.markdown("2단계 기본 설정에서 매핑된 변수입니다.")
+        for var in sorted(fixed_vars):
+            st.code(f"{{{var}}}", language="text")
 
-        with var_tab3:
-            st.markdown("시스템에서 자동으로 계산되는 변수입니다.")
-            for var in calculated_vars:
-                st.code(f"{{{var}}}", language="text")
-
-        st.markdown("---")
-        
-        st.markdown("### ⚡ 빠른 삽입")
-        st.markdown("버튼을 클릭하면 해당 변수를 쉽게 복사할 수 있습니다.")
-        
-        # 빠른 삽입 버튼 UI
-        quick_cols = st.columns(3)
+    with var_tabs[2]: # 자동 계산 탭
+        st.markdown("시스템에서 자동으로 계산되는 변수입니다.")
+        for var in sorted(calculated_vars):
+            st.code(f"{{{var}}}", language="text")
+            
+    # 빠른 삽입 기능
+    with st.expander("⚡ 빠른 변수 삽입 (클릭하여 복사)"):
+        quick_cols = st.columns(5) # 5열로 변경하여 더 많은 변수 표시
         for i, var_name in enumerate(all_available_vars):
-            if quick_cols[i % 3].button(f"`{{{var_name}}}`", use_container_width=True, help=f"{{{var_name}}} 복사"):
-                # Streamlit 환경에서는 클립보드 직접 제어가 어려우므로,
-                # 사용자가 쉽게 복사할 수 있도록 텍스트를 명확하게 보여줌
+            if quick_cols[i % 5].button(f"`{{{var_name}}}`", use_container_width=True, help=f"{{{var_name}}} 복사"):
                 st.info(f"아래 텍스트를 복사하여 사용하세요:")
                 st.code(f"{{{var_name}}}", language="text")
 
-    # 템플릿 미리보기 섹션
-    st.markdown("---")
-    # show_template_preview 함수가 내부적으로 샘플 데이터를 관리하므로 템플릿만 넘겨줌
-    show_template_preview(template) 
 
-    # 네비게이션 버튼
+    # --- 4. 네비게이션 버튼 ---
     st.markdown("---")
     nav_cols = st.columns([1, 1])
     if nav_cols[0].button("⬅️ 이전 단계 (매핑 설정)", use_container_width=True):
@@ -590,7 +535,7 @@ def show_template_step():
         st.session_state.current_step = 4
         st.success("✅ 메시지 생성 단계로 이동합니다!")
         st.rerun()
-        
+  
 def show_message_generation_step():
     st.header("4️⃣ 메시지 생성")
     
@@ -694,95 +639,100 @@ def process_data_and_generate_messages():
         show_error_details(e, "데이터 처리 및 메시지 생성 중")
         raise
 
+# main_app.py 파일에서 show_results_step 함수를 아래 코드로 교체하세요.
+
 def show_results_step():
     st.header("5️⃣ 결과 확인")
-    
-    if not st.session_state.generated_messages:
-        st.warning("⚠️ 생성된 메시지가 없습니다.")
+
+    if not st.session_state.get('generated_messages'):
+        st.warning("⚠️ 생성된 메시지가 없습니다. 이전 단계에서 메시지를 생성해주세요.")
         if st.button("⬅️ 이전 단계로"):
             st.session_state.current_step = 4
             st.rerun()
         return
-    
-    st.success(f"✅ 총 {len(st.session_state.generated_messages)}개의 메시지가 생성되었습니다!")
-    
-    # 그룹 선택
+
+    total_messages = len(st.session_state.generated_messages)
+    st.success(f"✅ 총 {total_messages}개의 메시지가 생성되었습니다!")
+
+    # 그룹 선택 UI
     group_options = []
-    for group_id, data in st.session_state.generated_messages.items():
+    # 생성된 메시지를 엑셀 순서대로 정렬하여 보여주기
+    sorted_messages = sorted(st.session_state.generated_messages.items(), key=lambda item: item[1]['group_info'].get('excel_order', 0))
+    
+    for group_id, data in sorted_messages:
         group_info = data['group_info']
-        group_options.append(f"{group_id} - {group_info['team_name']} ({group_info['sender_group']})")
+        group_options.append(f"{group_id} - {group_info['team_name']} ({group_info.get('sender', '')}님 그룹)")
     
-    selected_group = st.selectbox("📋 확인할 그룹을 선택하세요:", group_options)
-    
-    if selected_group:
-        group_id = selected_group.split(' ')[0]
-        message_data = st.session_state.generated_messages[group_id]
+    selected_group_label = st.selectbox("📋 확인할 그룹을 선택하세요:", group_options)
+
+    if selected_group_label:
+        # 선택된 레이블에서 group_id 추출
+        selected_group_id = selected_group_label.split(' ')[0]
+        message_data = st.session_state.generated_messages[selected_group_id]
         group_info = message_data['group_info']
         message = message_data['message']
-        
+
         # 그룹 정보 표시
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("팀명", group_info['team_name'])
+            st.metric("팀명", group_info.get('team_name', 'N/A'))
         with col2:
-            st.metric("발송그룹", group_info['sender_group'])
+            st.metric("대표자", group_info.get('sender', 'N/A'))
         with col3:
-            st.metric("인원수", f"{group_info['group_size']}명")
-        
-        st.markdown("**👥 그룹 멤버:**")
-        st.write(", ".join(group_info['members']))
-        
-        # 메시지 표시
-        st.markdown("**📱 생성된 메시지:**")
-        st.markdown(f'<div class="message-preview">{message}</div>', unsafe_allow_html=True)
-        
-        # 메시지 복사 버튼
-        if st.button("📋 클립보드에 복사", key=f"copy_{group_id}"):
-            st.success("✅ 메시지가 클립보드에 복사되었습니다!")
-    
+            st.metric("인원수", f"{group_info.get('group_size', 0)}명")
+
+        # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ [핵심 수정 부분] ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+        # st.markdown 대신 st.text_area를 사용하여 안정적으로 메시지 표시
+        st.markdown("**📱 생성된 메시지 (아래 박스를 클릭하여 쉽게 복사하세요)**")
+        st.text_area(
+            label="Generated Message",
+            value=message,
+            height=300,
+            disabled=True,  # 사용자가 수정은 못하게 막음
+            label_visibility="collapsed",
+            help="이 박스 안의 텍스트는 마우스로 쉽게 선택하고 복사(Ctrl+C)할 수 있습니다."
+        )
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     st.markdown("---")
-    
+
     # 전체 다운로드 섹션
     st.markdown("**📥 전체 결과 다운로드**")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # 텍스트 파일 다운로드
-        if st.button("📄 텍스트 파일 다운로드", type="primary"):
-            txt_content = create_text_download()
-            st.download_button(
-                label="💾 messages.txt 다운로드",
-                data=txt_content,
-                file_name=f"travel_messages_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                mime="text/plain"
-            )
-    
-    with col2:
-        # 엑셀 파일 다운로드
-        if st.button("📊 엑셀 파일 다운로드", type="secondary"):
-            excel_content = create_excel_download()
-            st.download_button(
-                label="💾 messages.xlsx 다운로드",
-                data=excel_content,
-                file_name=f"travel_messages_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-    
+    col_dl1, col_dl2 = st.columns(2)
+    with col_dl1:
+        txt_content = create_text_download()
+        st.download_button(
+            label="📄 모든 메시지 텍스트로 다운로드",
+            data=txt_content,
+            file_name=f"travel_messages_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+            mime="text/plain",
+            use_container_width=True
+        )
+    with col_dl2:
+        excel_content = create_excel_download()
+        st.download_button(
+            label="📊 모든 메시지 엑셀로 다운로드",
+            data=excel_content,
+            file_name=f"travel_messages_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+
     # 네비게이션
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        if st.button("⬅️ 이전 단계"):
-            st.session_state.current_step = 4
+    st.markdown("---")
+    col_nav1, col_nav2 = st.columns([1, 1])
+    with col_nav1:
+        if col_nav1.button("⬅️ 이전 단계 (템플릿 설정)", use_container_width=True):
+            st.session_state.current_step = 3
             st.rerun()
-    with col2:
-        if st.button("🔄 새로 시작", type="secondary"):
+    with col_nav2:
+        if col_nav2.button("🔄 처음부터 새로 시작", use_container_width=True):
             # 세션 상태 초기화
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.session_state.current_step = 1
             st.rerun()
-
+            
 def create_text_download():
     """텍스트 파일 다운로드 컨텐츠 생성"""
     content = []
