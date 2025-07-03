@@ -71,54 +71,59 @@ def highlight_template_variables(template_text):
 # ui_helpers.py 파일에서 show_template_preview 함수를 아래 코드로 교체하세요.
 
 def show_template_preview(template, sample_variables=None):
-    """템플릿 미리보기"""
+    """템플릿 미리보기 (포맷팅 오류 해결)"""
     if sample_variables is None:
+        # 기본 샘플 데이터 정의
         sample_variables = {
-            'product_name': '하와이 힐링 7일',
-            'payment_due_date': '2024-12-20',
-            'base_exchange_rate': 1300,
-            'current_exchange_rate': 1350,
-            'exchange_rate_diff': 50,
-            'company_burden': 20,
-            'team_name': '1팀',
-            'sender_group': 'A그룹',
-            'group_members_text': '김철수님, 이영희님',
-            'group_size': 2,
-            'total_balance': 3480000,
-            'bank_account': '국민은행 123-456-789 (주)여행사',
-            'additional_fee_per_person': 70
+            'product_name': '해외 힐링 7일', 'payment_due_date': '2025-07-31',
+            'base_exchange_rate': 1300, 'current_exchange_rate': 1350,
+            'exchange_rate_diff': 50, 'company_burden': 20,
+            'team_name': '1팀', 'sender_group': 'A그룹',
+            'group_members_text': '홍길동님, 김민준님', 'group_size': 2,
+            'total_balance': 3480000, 'bank_account': '우리은행 123-456-7890',
+            'additional_fee_per_person': 70, 'name': '홍길동',
+            'contact': '010-1234-5678', 'product_price': 2000000,
+            'total_refund': 1257200, 'person_refund': 628600,
+            'dubai_tour_fee': 849000, 'cancel_cost': 408200
         }
-    
+
     st.markdown("**🔍 템플릿 미리보기:**")
-    
+
     try:
-        # 템플릿에 있는 변수 중 샘플 데이터에 없는 경우, 기본값 제공
+        # 템플릿에만 있고 샘플 데이터에는 없는 변수들을 위해 기본값 추가
         template_vars = set(re.findall(r'\{(\w+)(?::[^}]+)?\}', template))
-        
         for var in template_vars:
             if var not in sample_variables:
-                # 변수명에 금액 관련 키워드가 있으면 0, 아니면 [변수명]으로 표시
-                if any(keyword in var.lower() for keyword in ['price', 'fee', 'amount', 'balance', 'cost', 'money', 'rate', 'size', 'count']):
+                if any(keyword in var.lower() for keyword in ['price', 'fee', 'amount', 'balance', 'cost', 'money', 'rate', 'size', 'count', '환불', '금액']):
                     sample_variables[var] = 0
                 else:
                     sample_variables[var] = f"[{var}]"
+
+        # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ [핵심 수정] 포맷팅 오류 방지 로직 ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+        # 템플릿에서 숫자 포맷팅(예: `{var:,}`)이 사용된 변수 목록을 찾음
+        number_format_vars = set(re.findall(r'\{(\w+):[^}]*[,d][^}]*\}', template))
         
+        for var_name in number_format_vars:
+            if var_name in sample_variables:
+                # 해당 변수의 값이 숫자가 아니면 0으로 강제 변환하여 오류 방지
+                if not isinstance(sample_variables[var_name], (int, float)):
+                    sample_variables[var_name] = 0
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
         preview_message = template.format(**sample_variables)
         
-        # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-        # style에 color: #212529; 를 추가하여 글자색을 어둡게 고정
+        # 글자색을 어둡게 고정하여 다크모드에서도 잘 보이도록 함
         st.markdown(
             f'<div style="background-color: #f8f9fa; color: #212529; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px; font-family: \'Noto Sans KR\', sans-serif; line-height: 1.6; white-space: pre-wrap;">{preview_message}</div>',
             unsafe_allow_html=True
         )
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
         
     except KeyError as e:
         missing_var = str(e).strip("'")
         st.error(f"❌ 템플릿 오류: 정의되지 않은 변수 {{{missing_var}}}가 사용되었습니다. 매핑 설정을 확인해주세요.")
     except Exception as e:
         st.error(f"❌ 미리보기 생성 중 오류가 발생했습니다: {str(e)}")
-
+        
 def show_variable_suggestions(df_columns):
     """변수 제안 표시"""
     st.markdown("**💡 사용 가능한 변수 제안:**")

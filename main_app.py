@@ -446,11 +446,12 @@ def get_column_index(columns, search_term):
 
 def show_template_step():
     st.header("3️⃣ 템플릿 설정")
-    
-    if 'mapping_data' not in st.session_state:
+
+    # 매핑 데이터가 없으면 이전 단계로 이동하도록 안내
+    if 'mapping_data' not in st.session_state or not st.session_state.mapping_data.get('column_mappings'):
         create_info_card(
             "매핑 설정이 필요합니다",
-            "먼저 매핑 설정을 완료해주세요.",
+            "이전 단계에서 엑셀 컬럼과 변수 매핑을 먼저 완료해주세요.",
             "⚠️",
             "warning"
         )
@@ -458,235 +459,138 @@ def show_template_step():
             st.session_state.current_step = 2
             st.rerun()
         return
-    
-    # 템플릿 안내 정보
+
+    # 템플릿 작성 가이드 안내
     create_info_card(
         "템플릿 작성 가이드",
         """
-        • **변수 사용**: `{변수명}` 형태로 사용 (예: {product_name})
-        • **숫자 포맷**: `{금액:,}` 형태로 콤마 표시 (예: {total_balance:,}원)
-        • **미리보기**: 실시간으로 결과를 확인할 수 있습니다
-        • **자동 완성**: 사용 가능한 변수를 참조하세요
-        """,
-        "📝"
+        • **변수 사용**: 오른쪽 '사용 가능한 변수' 목록을 참고하여 `{변수명}` 형태로 사용하세요.
+        • **숫자 포맷**: 금액, 개수 등 숫자 변수는 `{변수명:,}` 형태로 콤마(,)를 표시할 수 있습니다.
+        • **미리보기**: 템플릿을 수정하면 실시간으로 미리보기에 반영됩니다.
+        """, "📝"
     )
-    
-    # 기본 템플릿
-    default_template = """[여행처럼]
-잔금 입금 안내
 
-안녕하세요, 여행처럼입니다.
-{product_name} 예약 건 관련하여
-잔금 결제를 요청드리고자 연락드립니다.
+    # --- 동적으로 사용 가능한 변수 목록 생성 ---
+    # 1. 고정 정보 변수 (기본 설정에서 매핑)
+    fixed_vars = list(st.session_state.mapping_data.get('fixed_data_mapping', {}).keys())
+    # 2. 엑셀 컬럼 변수 (동적 매핑)
+    dynamic_vars = list(st.session_state.mapping_data.get('column_mappings', {}).values())
+    # 3. 자동 계산 변수 (미리 정의)
+    calculated_vars = ['group_members_text', 'group_size', 'additional_fee_per_person']
+    # 4. 모든 변수를 합치고 중복 제거 후 정렬
+    all_available_vars = sorted(list(set(fixed_vars + dynamic_vars + calculated_vars)))
 
-※상품가는 현금가 기준으로 현금 이체해주셔야 하며 카드 결제 시
-2.5%의 카드수수료가 발생하는 점 참고 부탁드리겠습니다.
 
-더불어 현재 환율이 저희 여행사에서 계획했던 예산에서
-약 {exchange_rate_diff}원 상승하여 아래와 같이 추가요금이 발생되었습니다.
-
-ㆍ상품 판매 기준환율 {base_exchange_rate:,}원
-ㆍ현재 매매 기준환율 {current_exchange_rate:,}원
-ㆍ환율 {exchange_rate_diff}원 인상으로 인한 1인당 추가요금 {additional_fee_per_person:,}원
-
-[결제내역]
-{group_members_text}
-상품가 + 환차금 - 예약금 - 항공료 = {total_balance:,}원
-
-ㆍ잔금 : {total_balance:,}원
-ㆍ잔금 완납일 : {payment_due_date}
-
-아래 계좌로 송금 부탁드립니다.
-*{bank_account}*
-
-감사합니다. ^^"""
-
+    # 메인 레이아웃 (템플릿 편집기 | 변수 목록)
     col1, col2 = st.columns([3, 2])
-    
+
+    # 왼쪽 컬럼: 템플릿 편집기
     with col1:
         st.markdown("### 📝 메시지 템플릿 편집")
         
-        # 템플릿 편집기
+        # 기본 템플릿 정의
+        default_template = st.session_state.get('template', """[여행처럼]
+잔금 입금 안내
+
+안녕하세요, 여행처럼입니다.
+{product_name} 예약 건 관련하여 잔금 결제를 요청드립니다.
+
+[결제내역]
+{group_members_text}
+총 잔금: {total_balance:,}원
+
+완납일: {payment_due_date}
+입금계좌: {bank_account}
+
+감사합니다.
+""")
+        
+        # 템플릿 편집기 (text_area)
         template = st.text_area(
             "템플릿 내용",
-            value=st.session_state.get('template', default_template),
-            height=500,
-            help="변수는 {변수명} 형태로 사용하세요. 예: {product_name}, {total_balance:,}",
-            key="template_editor"
+            value=default_template,
+            height=600,
+            key="template_editor",
+            help="오른쪽 변수 목록을 사용하여 템플릿을 작성하세요."
         )
-        
-        # 템플릿 저장
+        # 수정한 내용을 세션 상태에 즉시 저장
         st.session_state.template = template
         
-        # 템플릿 액션 버튼
-        col_a, col_b, col_c = st.columns(3)
+        # 템플릿 관리 버튼
+        btn_cols = st.columns(3)
+        if btn_cols[0].button("🔄 기본값 복원"):
+            st.session_state.template = default_template
+            st.rerun()
         
-        with col_a:
-            if st.button("🔄 기본 템플릿으로 리셋", help="기본 템플릿으로 초기화"):
-                st.session_state.template = default_template
-                st.rerun()
-        
-        with col_b:
-            if st.button("💾 템플릿 저장", help="현재 템플릿을 파일로 저장"):
-                st.download_button(
-                    label="📄 템플릿 다운로드",
-                    data=template,
-                    file_name=f"template_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                    mime="text/plain"
-                )
-        
-        with col_c:
-            uploaded_template = st.file_uploader(
-                "📁 템플릿 불러오기",
-                type=['txt'],
-                help="저장된 템플릿 파일을 업로드"
-            )
-            if uploaded_template:
-                template_content = uploaded_template.read().decode('utf-8')
-                st.session_state.template = template_content
-                st.success("✅ 템플릿이 불러와졌습니다!")
-                st.rerun()
-    
+        # 다운로드 버튼은 st.download_button 내에서 파일 내용을 생성해야 함
+        btn_cols[1].download_button(
+            label="💾 템플릿 저장",
+            data=template.encode('utf-8'),
+            file_name=f"template_{datetime.now().strftime('%Y%m%d')}.txt",
+            mime="text/plain",
+        )
+
+        # 템플릿 불러오기
+        uploaded_template = btn_cols[2].file_uploader("📁 템플릿 열기", type=['txt'])
+        if uploaded_template is not None:
+            st.session_state.template = uploaded_template.read().decode('utf-8')
+            st.success("템플릿을 불러왔습니다.")
+            st.rerun()
+
+
+    # 오른쪽 컬럼: 사용 가능한 변수 및 빠른 삽입
     with col2:
         st.markdown("### 💡 사용 가능한 변수")
         
-        # 탭으로 변수 분류
-        var_tab1, var_tab2, var_tab3 = st.tabs(["기본 정보", "그룹 정보", "계산 변수"])
-        
+        # 탭으로 변수 목록을 깔끔하게 정리
+        var_tab1, var_tab2, var_tab3 = st.tabs(["**고정 정보**", "**엑셀 컬럼**", "**자동 계산**"])
+
         with var_tab1:
-            st.markdown("""
-            **🏷️ 상품 정보:**
-            - `{product_name}` - 상품명
-            - `{payment_due_date}` - 잔금완납일
-            
-            **💱 환율 정보:**
-            - `{base_exchange_rate:,}` - 기준환율
-            - `{current_exchange_rate:,}` - 현재환율
-            - `{exchange_rate_diff}` - 환율차액
-            - `{company_burden:,}` - 당사부담금
-            """)
-        
+            st.markdown("기본 설정에서 매핑된 변수입니다.")
+            for var in fixed_vars:
+                st.code(f"{{{var}}}", language="text")
+
         with var_tab2:
-            st.markdown("""
-            **👥 그룹 정보:**
-            - `{team_name}` - 팀명
-            - `{sender_group}` - 발송그룹
-            - `{group_members_text}` - 멤버 목록
-            - `{group_size}` - 그룹 인원수
-            
-            **💰 금액 정보:**
-            - `{total_balance:,}` - 총 잔금
-            - `{bank_account}` - 계좌정보
-            - `{contact}` - 연락처
-            """)
-        
+            st.markdown("동적 매핑 설정에서 지정한 변수입니다.")
+            for var in sorted(dynamic_vars):
+                st.code(f"{{{var}}}", language="text")
+
         with var_tab3:
-            st.markdown("""
-            **🧮 자동 계산:**
-            - `{additional_fee_per_person:,}` - 1인당 추가요금
-            - `{product_price:,}` - 상품가
-            - `{exchange_fee:,}` - 환차금
-            - `{deposit:,}` - 예약금
-            
-            **📝 형식 예시:**
-            - 콤마 표시: `{금액:,}원`
-            - 일반 텍스트: `{변수명}`
-            """)
+            st.markdown("시스템에서 자동으로 계산되는 변수입니다.")
+            for var in calculated_vars:
+                st.code(f"{{{var}}}", language="text")
+
+        st.markdown("---")
         
-        # 매핑된 컬럼 기반 추천 변수
-        if 'mapping_data' in st.session_state:
-            optional_cols = st.session_state.mapping_data.get('optional_columns', {})
-            if optional_cols:
-                st.markdown("### 🎯 매핑된 변수")
-                for excel_col, var_name in optional_cols.items():
-                    st.code(f"{{{var_name}}}")
-        
-        # 변수 삽입 도구
         st.markdown("### ⚡ 빠른 삽입")
-        quick_vars = {
-            "상품명": "{product_name}",
-            "총 잔금": "{total_balance:,}원",
-            "멤버 목록": "{group_members_text}",
-            "완납일": "{payment_due_date}",
-            "계좌": "{bank_account}"
-        }
+        st.markdown("버튼을 클릭하면 해당 변수를 쉽게 복사할 수 있습니다.")
         
-        for label, var_code in quick_vars.items():
-            if st.button(f"➕ {label}", key=f"insert_{label}", help=f"{var_code} 삽입"):
-                st.info(f"복사: `{var_code}`")
-    
-    # 템플릿 미리보기
+        # 빠른 삽입 버튼 UI
+        quick_cols = st.columns(3)
+        for i, var_name in enumerate(all_available_vars):
+            if quick_cols[i % 3].button(f"`{{{var_name}}}`", use_container_width=True, help=f"{{{var_name}}} 복사"):
+                # Streamlit 환경에서는 클립보드 직접 제어가 어려우므로,
+                # 사용자가 쉽게 복사할 수 있도록 텍스트를 명확하게 보여줌
+                st.info(f"아래 텍스트를 복사하여 사용하세요:")
+                st.code(f"{{{var_name}}}", language="text")
+
+    # 템플릿 미리보기 섹션
     st.markdown("---")
-    st.markdown("### 🔍 템플릿 미리보기")
-    
-    with st.container():
-        # 미리보기 샘플 데이터 생성
-        sample_data = {
-            'product_name': '하와이 힐링 7일',
-            'payment_due_date': '2024-12-20',
-            'base_exchange_rate': 1300,
-            'current_exchange_rate': 1350,
-            'exchange_rate_diff': 50,
-            'company_burden': 20,
-            'team_name': '1팀',
-            'sender_group': 'A그룹',
-            'group_members_text': '김철수님, 이영희님',
-            'group_size': 2,
-            'total_balance': 3480000,
-            'bank_account': '국민은행 123-456-789 (주)여행사',
-            'additional_fee_per_person': 70,
-            'contact': '010-1234-5678',
-            'product_price': 2800000,
-            'exchange_fee': 40000,
-            'deposit': 500000
-        }
-        
-        try:
-            show_template_preview(template, sample_data)
-            
-            # 사용된 변수 분석
-            template_vars = set(re.findall(r'\{(\w+)(?::[^}]+)?\}', template))
-            
-            col_info1, col_info2, col_info3 = st.columns(3)
-            with col_info1:
-                st.metric("사용된 변수 수", len(template_vars))
-            with col_info2:
-                missing_vars = [var for var in template_vars if var not in sample_data]
-                st.metric("누락된 변수", len(missing_vars))
-            with col_info3:
-                st.metric("템플릿 길이", f"{len(template)} 자")
-            
-            if missing_vars:
-                st.warning(f"⚠️ 누락된 변수: {', '.join(missing_vars)}")
-                st.markdown("매핑 설정에서 해당 변수를 추가하거나 템플릿에서 제거하세요.")
-            
-        except Exception as e:
-            show_error_details(e, "템플릿 미리보기 생성 중")
-    
+    # show_template_preview 함수가 내부적으로 샘플 데이터를 관리하므로 템플릿만 넘겨줌
+    show_template_preview(template) 
+
     # 네비게이션 버튼
     st.markdown("---")
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        if st.button("⬅️ 이전 단계", use_container_width=True):
-            st.session_state.current_step = 2
-            st.rerun()
-    with col2:
-        if st.button("➡️ 다음 단계: 메시지 생성", type="primary", use_container_width=True):
-            # 템플릿 유효성 검사
-            try:
-                template_vars = set(re.findall(r'\{(\w+)(?::[^}]+)?\}', template))
-                basic_vars = {'product_name', 'team_name', 'group_members_text'}
-                
-                if not any(var in template_vars for var in basic_vars):
-                    st.warning("⚠️ 기본 변수(상품명, 팀명, 멤버 등) 중 하나는 포함되어야 합니다.")
-                else:
-                    st.session_state.current_step = 4
-                    st.success("✅ 메시지 생성 단계로 이동합니다!")
-                    st.rerun()
-                    
-            except Exception as e:
-                st.error(f"템플릿 검증 중 오류: {str(e)}")
-
+    nav_cols = st.columns([1, 1])
+    if nav_cols[0].button("⬅️ 이전 단계 (매핑 설정)", use_container_width=True):
+        st.session_state.current_step = 2
+        st.rerun()
+    
+    if nav_cols[1].button("➡️ 다음 단계 (메시지 생성)", type="primary", use_container_width=True):
+        st.session_state.current_step = 4
+        st.success("✅ 메시지 생성 단계로 이동합니다!")
+        st.rerun()
+        
 def show_message_generation_step():
     st.header("4️⃣ 메시지 생성")
     
