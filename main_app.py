@@ -9,6 +9,7 @@ import io
 from enhanced_processor import EnhancedDataProcessor, EnhancedMessageGenerator
 from ui_helpers import *
 from preset_manager import PresetManager
+from template_manager import TemplateManager
 
 # 페이지 설정
 st.set_page_config(
