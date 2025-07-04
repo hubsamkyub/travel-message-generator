@@ -113,7 +113,6 @@ def show_file_upload_step():
         st.markdown("#### 💡 파일 구조 예시")
         st.code("엑셀 파일 구조:\n┌─────────────────────┐\n│ A1: [빈칸]  D1: 상품명    │\n│ A2: [빈칸]  D2: 하와이7일  │\n│ ...                 │\n│ A9: 팀     B9: 그룹     │\n│ A10: 1팀   B10: A그룹   │\n└─────────────────────┘")
 
-
 def show_mapping_step():
     st.header("2️⃣ 매핑 설정")
     preset_manager = PresetManager()
@@ -272,6 +271,53 @@ def show_mapping_step():
             
             st.session_state.current_step = 3
             st.rerun()
+
+def preview_fixed_data(fixed_mapping):
+    """고정 정보 미리보기"""
+    try:
+        df_raw = st.session_state.sheet_data
+        
+        st.markdown("**🔍 고정 정보 미리보기:**")
+        
+        for key, cell_addr in fixed_mapping.items():
+            value = get_cell_value(df_raw, cell_addr)
+            st.write(f"**{key}**: {value} (셀: {cell_addr})")
+            
+    except Exception as e:
+        st.error(f"미리보기 오류: {str(e)}")
+
+def get_cell_value(df, cell_address, default=""):
+    """DataFrame에서 셀 주소로 값 가져오기"""
+    try:
+        # 셀 주소 파싱 (예: A1 -> (0, 0))
+        col_str = ''.join(filter(str.isalpha, cell_address.upper()))
+        row_str = ''.join(filter(str.isdigit, cell_address))
+        
+        if not col_str or not row_str:
+            return default
+        
+        # 열 문자를 숫자로 변환
+        col_idx = 0
+        for i, char in enumerate(reversed(col_str)):
+            col_idx += (ord(char) - ord('A') + 1) * (26 ** i)
+        col_idx -= 1  # 0-based로 변환
+        
+        row_idx = int(row_str) - 1  # 0-based로 변환
+        
+        if row_idx < len(df) and col_idx < len(df.columns):
+            value = df.iloc[row_idx, col_idx]
+            return value if pd.notna(value) else default
+        return default
+        
+    except Exception:
+        return default
+
+def get_column_index(columns, search_term):
+    """컬럼 리스트에서 검색어가 포함된 인덱스 찾기"""
+    for i, col in enumerate(columns):
+        if search_term in str(col):
+            return i
+    return 0
 
 def show_template_step():
     st.header("3️⃣ 템플릿 설정")
@@ -715,6 +761,6 @@ def create_excel_download(include_edited=False):
         df.to_excel(writer, index=False, sheet_name='메시지')
     
     return output.getvalue()
-            
+
 if __name__ == "__main__":
     main()
