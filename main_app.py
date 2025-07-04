@@ -444,15 +444,13 @@ def get_column_index(columns, search_term):
         if search_term in str(col):
             return i
     return 0
+
 def show_template_step():
     st.header("3️⃣ 템플릿 설정")
 
     # 매핑 데이터 유효성 검사
     if 'mapping_data' not in st.session_state or not st.session_state.mapping_data.get('column_mappings'):
-        create_info_card(
-            "매핑 설정이 필요합니다",
-            "이전 단계에서 엑셀 컬럼과 변수 매핑을 먼저 완료해주세요.", "⚠️", "warning"
-        )
+        create_info_card("매핑 설정이 필요합니다", "이전 단계에서 엑셀 컬럼과 변수 매핑을 먼저 완료해주세요.", "⚠️", "warning")
         if st.button("⬅️ 이전 단계로"):
             st.session_state.current_step = 2
             st.rerun()
@@ -462,75 +460,89 @@ def show_template_step():
     fixed_data_mapping = st.session_state.mapping_data.get('fixed_data_mapping', {})
     column_mappings = st.session_state.mapping_data.get('column_mappings', {})
     header_row = st.session_state.mapping_data.get('table_settings', {}).get('header_row', 1)
-
     fixed_vars = list(fixed_data_mapping.keys())
     dynamic_vars = list(column_mappings.values())
     calculated_vars = ['group_members_text', 'group_size', 'additional_fee_per_person']
     all_available_vars = sorted(list(set(fixed_vars + dynamic_vars + calculated_vars)))
 
-    # 미리보기에 사용할 실제 데이터 생성
     preview_variables = {}
     try:
-        df_table = pd.read_excel(
-            st.session_state.uploaded_file,
-            sheet_name=st.session_state.selected_sheet,
-            header=header_row - 1
-        )
+        df_table = pd.read_excel(st.session_state.uploaded_file, sheet_name=st.session_state.selected_sheet, header=header_row - 1)
         if not df_table.empty:
             first_row = df_table.iloc[0]
             for excel_col, var_name in column_mappings.items():
                 if excel_col in first_row:
                     preview_variables[var_name] = first_row[excel_col]
-
         for var_name, cell in fixed_data_mapping.items():
             preview_variables[var_name] = get_cell_value(st.session_state.sheet_data, cell)
-
         preview_variables['group_members_text'] = f"{preview_variables.get('name', '아무개')}님 외 1명"
         preview_variables['group_size'] = 2
         preview_variables['additional_fee_per_person'] = 70000
-
     except Exception as e:
         st.warning(f"미리보기 데이터 생성 중 오류 발생: {e}")
 
-
     # --- 2. 상단 레이아웃: [좌] 편집기 | [우] 미리보기 ---
     editor_col, preview_col = st.columns(2, gap="large")
-
     with editor_col:
         st.markdown("##### 📝 메시지 템플릿 편집")
         default_template = st.session_state.get('template', "[여행처럼]\n안녕하세요, {product_name} 안내입니다.")
         template = st.text_area("Template Editor", value=default_template, height=500, key="template_editor", label_visibility="collapsed")
         st.session_state.template = template
-
     with preview_col:
         show_template_preview(template, preview_variables)
 
-
-    # --- 3. 하단 레이아웃: 템플릿 관리 및 변수 목록 ---
     st.markdown("---")
 
-    with st.expander("📂 내 템플릿 관리 (가져오기 및 변수 스마트 매핑)", expanded=True):
-        uploaded_template_file = st.file_uploader("사용자 정의 템플릿 파일(.txt)을 업로드하세요.", type=['txt'], key="template_uploader")
+    # --- 3. 하단 레이아웃: 템플릿 관리 및 변수 목록 ---
+    
+    # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ [핵심 수정 부분] ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+    # 콜백 함수 정의: 파일이 업로드/변경될 때만 실행될 로직
+    def on_template_upload():
+        uploaded_file = st.session_state.get("template_uploader")
+        if not uploaded_file:
+            return
 
-        # '매핑 적용' 버튼을 누른 후에는 이 조건이 False가 되어 매핑 UI가 더 이상 보이지 않음
-        if uploaded_template_file and 'template_to_system_map' in st.session_state:
-            st.warning(f"⚠️ 템플릿의 변수와 시스템 변수가 다릅니다. 아래에서 매핑을 조정해주세요.")
+        # 상태 초기화
+        st.session_state.pop('template_to_system_map', None)
+        
+        uploaded_content = uploaded_file.read().decode('utf-8')
+        st.session_state.uploaded_template_content = uploaded_content
+        
+        template_vars = set(re.findall(r'\{(\w+)(?::[^}]+)?\}', uploaded_content))
+        unmapped_template_vars = [var for var in template_vars if var not in all_available_vars]
+
+        if not unmapped_template_vars:
+            # 매핑이 필요 없으면 바로 템플릿 적용
+            st.session_state.template = uploaded_content
+            st.session_state.pop('uploaded_template_content', None)
+            st.success("✅ 템플릿이 성공적으로 적용되었습니다.")
+        else:
+            # 매핑이 필요하면, 매핑 UI를 띄우기 위한 상태 설정
+            st.session_state.template_to_system_map = {var: "선택 안 함" for var in unmapped_template_vars}
+
+    with st.expander("📂 내 템플릿 관리 (가져오기 및 변수 스마트 매핑)", expanded=True):
+        st.file_uploader(
+            "사용자 정의 템플릿 파일(.txt)을 업로드하세요.",
+            type=['txt'],
+            key="template_uploader",
+            on_change=on_template_upload # 파일 업로드 시 콜백 함수 실행
+        )
+
+        # 'template_to_system_map' 상태가 존재할 때만 매핑 UI 표시
+        if 'template_to_system_map' in st.session_state:
+            st.warning("⚠️ 템플릿의 변수와 시스템 변수가 다릅니다. 아래에서 매핑을 조정해주세요.")
             st.markdown("**스마트 변수 매핑 도우미**")
             
-            unmapped_template_vars = list(st.session_state.template_to_system_map.keys())
-            for var in unmapped_template_vars:
+            unmapped_vars = list(st.session_state.template_to_system_map.keys())
+            for var in unmapped_vars:
                 cols = st.columns([2, 1, 2])
                 cols[0].markdown(f"템플릿 변수: `{var}`")
                 cols[1].markdown("→")
-                st.session_state.template_to_system_map[var] = cols[2].selectbox(
-                    f"map_for_{var}", ["선택 안 함"] + all_available_vars,
-                    index=(["선택 안 함"] + all_available_vars).index(st.session_state.template_to_system_map.get(var, "선택 안 함")),
-                    label_visibility="collapsed"
-                )
+                # selectbox의 상태는 st.session_state.template_to_system_map에 의해 관리됨
+                st.session_state.template_to_system_map[var] = cols[2].selectbox(f"map_for_{var}", ["선택 안 함"] + all_available_vars, label_visibility="collapsed")
 
             if st.button("🚀 매핑 적용하고 템플릿 업데이트", type="primary"):
-                uploaded_content = st.session_state.uploaded_template_content
-                new_template = uploaded_content
+                new_template = st.session_state.uploaded_template_content
                 for template_var, system_var in st.session_state.template_to_system_map.items():
                     if system_var != "선택 안 함":
                         pattern = r'\{' + re.escape(template_var) + r'(:[^}]+)?\}'
@@ -538,36 +550,14 @@ def show_template_step():
                         new_template = re.sub(pattern, replacement, new_template)
                 
                 st.session_state.template = new_template
-
-                # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ [핵심 수정 부분] ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-                # 작업 완료 후, 매핑 UI를 다시 띄우는 데 사용된 모든 세션 상태를 깨끗하게 삭제
+                st.success("✅ 매핑이 적용되었습니다! 템플릿이 업데이트되었습니다.")
+                
+                # 작업 완료 후, 매핑 UI를 다시 띄우지 않도록 관련 상태를 모두 삭제
                 st.session_state.pop('template_to_system_map', None)
                 st.session_state.pop('uploaded_template_content', None)
-                st.session_state.pop('uploader_key', None)
-                # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+                st.rerun() # UI를 즉시 새로고침하여 매핑 UI를 숨김
 
-                st.success("✅ 매핑이 적용되었습니다! 템플릿이 업데이트되었습니다.")
-                st.rerun()
-
-        elif uploaded_template_file:
-            # 파일이 업로드되었지만 아직 매핑 UI가 생성되지 않은 초기 상태
-            if 'uploader_key' not in st.session_state or st.session_state.uploader_key != uploaded_template_file.file_id:
-                st.session_state.uploaded_template_content = uploaded_template_file.read().decode('utf-8')
-                st.session_state.uploader_key = uploaded_template_file.file_id
-                
-                uploaded_content = st.session_state.uploaded_template_content
-                template_vars = set(re.findall(r'\{(\w+)(?::[^}]+)?\}', uploaded_content))
-                unmapped_template_vars = [var for var in template_vars if var not in all_available_vars]
-
-                if not unmapped_template_vars:
-                    st.session_state.template = uploaded_content
-                    st.success("✅ 템플릿이 성공적으로 적용되었습니다. 모든 변수가 현재 시스템과 일치합니다.")
-                    st.session_state.pop('uploader_key', None) # 작업 완료 후 정리
-                    st.rerun()
-                else:
-                    # 매핑이 필요한 경우, 매핑 UI를 생성하기 위한 세션 상태 설정 후 재실행
-                    st.session_state.template_to_system_map = {var: "선택 안 함" for var in unmapped_template_vars}
-                    st.rerun()
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     st.markdown("---")
     st.markdown("##### 💡 사용 가능한 변수 목록")
@@ -603,7 +593,6 @@ def show_template_step():
         st.success("✅ 메시지 생성 단계로 이동합니다!")
         st.rerun()
 
-        
 def show_message_generation_step():
     st.header("4️⃣ 메시지 생성")
     

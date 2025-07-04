@@ -1,6 +1,6 @@
 [여행처럼] 여행사입니다.
 
-안녕하세요.
+안녕하세요. {name}님.
 
 <{product_name}> 일정 취소 관련 환불 안내 드립니다.
 
@@ -10,8 +10,10 @@
 → 총 1,257,200원
 
 [환불내역]
-{sender_group}
-상품가(항공료 제외 금액) {product_price:,}원 - 두바이 체류 관광비 {dubai:,}원 - 코카서스 여행 취소 수수료(20%): {cancel_cost:,}원 = {person_refund:,}원*{refund_member:,}인 = {total_refund:,}원
+{group_members_text}
+상품가(항공료 제외 금액) {product_price:,}원 - 두바이 체류 관광비 {dubai:,}원 - 코카서스 여행 취소 수수료(20%): {cancel_cost:,}원
+
+{person_refund:,}원*{refund_member:,}인
 
 ㆍ 총 환불 금액: {total_refund:,}원
 
