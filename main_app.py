@@ -445,7 +445,6 @@ def get_column_index(columns, search_term):
             return i
     return 0
 
-# main_app.py 파일에서 show_template_step 함수를 아래 코드로 교체하세요.
 def show_template_step():
     st.header("3️⃣ 템플릿 설정")
 
@@ -531,7 +530,7 @@ def show_template_step():
 
         if uploaded_template_file:
             # st.file_uploader가 재실행 시 초기화되는 것을 방지하기 위해 세션 상태 활용
-            if 'uploaded_template_content' not in st.session_state or st.session_state.uploader_key != uploaded_template_file.id:
+            if 'uploaded_template_content' not in st.session_state or st.session_state.get('uploader_key') != uploaded_template_file.id:
                 st.session_state.uploaded_template_content = uploaded_template_file.read().decode('utf-8')
                 st.session_state.uploader_key = uploaded_template_file.id
                 # 새 파일이 업로드되면 매핑 상태 초기화
@@ -545,7 +544,10 @@ def show_template_step():
             if not unmapped_template_vars:
                 st.session_state.template = uploaded_content
                 st.success("✅ 템플릿이 성공적으로 적용되었습니다. 모든 변수가 현재 시스템과 일치합니다.")
-                st.experimental_rerun()
+                # 세션 정리 후 재실행
+                if 'uploaded_template_content' in st.session_state: del st.session_state.uploaded_template_content
+                if 'uploader_key' in st.session_state: del st.session_state.uploader_key
+                st.rerun()
             else:
                 st.warning(f"⚠️ 템플릿의 변수와 시스템 변수가 다릅니다. 아래에서 매핑을 조정해주세요.")
                 if 'template_to_system_map' not in st.session_state:
@@ -568,7 +570,7 @@ def show_template_step():
                         if system_var != "선택 안 함":
                             new_template = re.sub(
                                 r'\{' + re.escape(template_var) + r'(:[^}]+)?\}',
-                                '{' + system_var + r'\1}',
+                                '{' + system_var + r'\\1}',
                                 new_template
                             )
                     st.session_state.template = new_template
@@ -577,7 +579,7 @@ def show_template_step():
                     del st.session_state.uploaded_template_content
                     del st.session_state.uploader_key
                     st.success("✅ 매핑이 적용되었습니다! 템플릿이 업데이트되었습니다.")
-                    st.experimental_rerun()
+                    st.rerun()
 
     st.markdown("---")
     st.markdown("##### 💡 사용 가능한 변수 목록")
@@ -617,7 +619,7 @@ def show_template_step():
         st.session_state.current_step = 4
         st.success("✅ 메시지 생성 단계로 이동합니다!")
         st.rerun()
-         
+        
 def show_message_generation_step():
     st.header("4️⃣ 메시지 생성")
     
