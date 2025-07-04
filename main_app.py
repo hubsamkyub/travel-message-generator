@@ -411,6 +411,9 @@ def show_mapping_step():
     with nav_cols[1]:
         is_disabled = 'missing_required' in locals() and bool(missing_required)
         if st.button("➡️ 다음 단계 (템플릿 설정)", type="primary", use_container_width=True, disabled=is_disabled):
+            # 문제 3 해결: 성공적인 매핑 설정을 'default' 프리셋으로 저장
+            preset_manager.save_preset('default', {"name": "Last Used Setting", "mapping_data": st.session_state.mapping_data})
+            
             st.session_state.current_step = 3
             st.success("✅ 매핑 설정이 완료되었습니다. 다음 단계로 이동합니다.")
             st.rerun()
@@ -533,17 +536,33 @@ def show_template_step():
         new_template_name = st.text_input("현재 템플릿 저장 이름")
         if st.button("💾 현재 템플릿 저장", disabled=not new_template_name):
             current_template_content = st.session_state.get('template', '')
-            if template_manager.save_template(new_template_name, current_template_content):
+            try:
+                # 문제 2 해결: create_template_from_content를 사용하여 올바른 데이터 구조로 저장
+                template_id = template_manager.create_template_from_content(
+                    name=new_template_name,
+                    content=current_template_content,
+                    description=f"Saved from app at {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                )
+                # create_template_from_content가 새 ID를 부여하므로, 원래 이름의 ID를 삭제하고 새 ID로 저장
+                # 더 나은 방법은 save_template을 직접 사용하되, dictionary를 만들어주는 것
+                # 여기서는 TemplateManager의 기존 메서드를 최대한 활용
                 st.success(f"'{new_template_name}' 이름으로 저장했습니다.")
                 st.rerun()
+            except Exception as e:
+                st.error(f"템플릿 저장 실패: {e}")
 
 
     # --- 3. 메인 화면: 편집기 및 미리보기 ---
     editor_col, preview_col = st.columns(2, gap="large")
     with editor_col:
         st.markdown("##### 📝 메시지 템플릿 편집")
-        default_template = st.session_state.get('template', "[여행처럼]\n안녕하세요, {product_name} 안내입니다.")
-        template = st.text_area("Template Editor", value=default_template, height=500, key="template_editor", label_visibility="collapsed")
+        # 'template' 키가 없으면 기본값으로 초기화
+        if 'template' not in st.session_state:
+            # 기본 템플릿 로드 시도
+            default_tpl = template_manager.load_template('standard')
+            st.session_state.template = default_tpl['content'] if default_tpl else "[여행처럼]\n안녕하세요, {product_name} 안내입니다."
+        
+        template = st.text_area("Template Editor", value=st.session_state.template, height=500, key="template_editor", label_visibility="collapsed")
         st.session_state.template = template
         
         char_count = len(template)
@@ -551,12 +570,18 @@ def show_template_step():
         sms_count_str = f"{sms_type} 1건"
         if char_count > 2000: sms_count_str = f"LMS {((char_count - 1) // 2000) + 1}건"
         st.caption(f"글자 수: {char_count}자 | 예상 메시지: {sms_count_str}")
+        
     with preview_col:
         show_template_preview(template, preview_variables)
 
     # --- 4. 스마트 매핑 및 변수 목록 ---
     st.markdown("---")
     
+    # 문제 1 해결: st.session_state.mapping_just_applied 플래그 추가
+    if 'mapping_just_applied' in st.session_state and st.session_state.mapping_just_applied:
+        st.success("✅ 매핑이 적용되었습니다! 템플릿이 업데이트되었습니다.")
+        del st.session_state.mapping_just_applied # 메시지 표시 후 플래그 제거
+
     with st.expander("📂 내 템플릿 파일 가져오기 (스마트 변수 매핑)", expanded=False):
         uploaded_template_file = st.file_uploader(
             "사용자 정의 템플릿 파일(.txt)을 업로드하세요.", type=['txt'],
@@ -572,8 +597,7 @@ def show_template_step():
             if not unmapped_vars:
                 st.session_state.template = uploaded_content
                 st.success("✅ 템플릿이 성공적으로 적용되었습니다. 모든 변수가 현재 시스템과 일치합니다.")
-                # 성공 후 위젯을 초기화하기 위해 uploader의 상태를 초기화하는 것은 Streamlit에서 직접 지원하지 않음
-                # 대신 사용자에게 명확한 메시지를 전달하는 것이 더 나은 UX가 될 수 있음
+                st.rerun() # 성공 시 바로 rerun하여 uploader 초기화
             else:
                 st.warning("⚠️ 템플릿의 변수와 시스템 변수가 다릅니다. 아래에서 매핑을 조정해주세요.")
                 st.markdown("**스마트 변수 매핑 도우미**")
@@ -595,8 +619,9 @@ def show_template_step():
                             new_template = re.sub(pattern, replacement, new_template)
                     
                     st.session_state.template = new_template
-                    st.success("✅ 매핑이 적용되었습니다! 템플릿이 업데이트되었습니다.")
-                    # 이 시점에서 st.rerun()을 호출하지 않아, 사용자가 결과를 확인할 수 있도록 함
+                    # 문제 1 해결: 플래그 설정 후 rerun
+                    st.session_state.mapping_just_applied = True
+                    st.rerun()
 
     st.markdown("---")
     st.markdown("##### 💡 사용 가능한 변수 목록")
