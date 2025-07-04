@@ -1,0 +1,28 @@
+{
+  "name": "상세 정보 포함",
+  "description": "모든 상세 정보를 포함한 완전한 템플릿",
+  "content": "=== {product_name} 잔금 결제 안내 ===\n\n📋 예약 정보\n• 상품명: {product_name}\n• 팀: {team_name} / 그룹: {sender_group}\n• 참가자: {group_members_text} ({group_size}명)\n\n💰 결제 정보\n• 상품가: {product_price:,}원\n• 환차금: {exchange_fee:,}원 (기준환율 {base_exchange_rate:,}원 → 현재환율 {current_exchange_rate:,}원)\n• 예약금: {deposit:,}원 (기납부)\n• 항공료: {flight_fee:,}원 (별도)\n• 추가금액: {additional_amount:,}원\n• 1인당 잔금: {individual_balance:,}원\n• 총 잔금: {total_balance:,}원\n\n📅 결제 정보\n• 완납일: {payment_due_date}\n• 입금계좌: {bank_account}\n• 입금자명: {sender} (대표)\n\n📞 문의: {contact}\n\n※ 결제 후 현금영수증 번호를 알려주세요.\n감사합니다.",
+  "variables": [
+    "product_name",
+    "team_name",
+    "sender_group",
+    "group_members_text",
+    "group_size",
+    "product_price",
+    "exchange_fee",
+    "base_exchange_rate",
+    "current_exchange_rate",
+    "deposit",
+    "flight_fee",
+    "additional_amount",
+    "individual_balance",
+    "total_balance",
+    "payment_due_date",
+    "bank_account",
+    "sender",
+    "contact"
+  ],
+  "category": "travel",
+  "created_at": "2025-07-05T07:47:23.300248",
+  "updated_at": "2025-07-05T07:47:23.301245"
+}

@@ -1,0 +1,15 @@
+{
+  "name": "간단한 잔금 안내",
+  "description": "핵심 정보만 포함한 간단한 템플릿",
+  "content": "[{product_name}] 잔금 안내\n\n안녕하세요!\n{product_name} 여행 잔금 안내입니다.\n\n👥 대상: {group_members_text}\n💰 잔금: {total_balance:,}원\n📅 완납일: {payment_due_date}\n🏦 계좌: {bank_account}\n\n감사합니다.",
+  "variables": [
+    "product_name",
+    "group_members_text",
+    "total_balance",
+    "payment_due_date",
+    "bank_account"
+  ],
+  "category": "travel",
+  "created_at": "2025-07-05T07:47:23.300248",
+  "updated_at": "2025-07-05T07:47:23.301245"
+}

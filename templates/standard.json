@@ -1,0 +1,19 @@
+{
+  "name": "표준 잔금 안내",
+  "description": "일반적인 여행 잔금 안내 템플릿",
+  "content": "[여행처럼]\n잔금 입금 안내\n\n안녕하세요, 여행처럼입니다.\n{product_name} 예약 건 관련하여\n잔금 결제를 요청드리고자 연락드립니다.\n\n※상품가는 현금가 기준으로 현금 이체해주셔야 하며 카드 결제 시\n2.5%의 카드수수료가 발생하는 점 참고 부탁드리겠습니다.\n\n더불어 현재 환율이 저희 여행사에서 계획했던 예산에서\n약 {exchange_rate_diff}원 상승하여 아래와 같이 추가요금이 발생되었습니다.\n\nㆍ상품 판매 기준환율 {base_exchange_rate:,}원\nㆍ현재 매매 기준환율 {current_exchange_rate:,}원\nㆍ환율 {exchange_rate_diff}원 인상으로 인한 1인당 추가요금 {additional_fee_per_person:,}원\n\n[결제내역]\n{group_members_text}\n상품가 + 환차금 - 예약금 - 항공료 = {total_balance:,}원\n\nㆍ잔금 : {total_balance:,}원\nㆍ잔금 완납일 : {payment_due_date}\n\n아래 계좌로 송금 부탁드립니다.\n*{bank_account}*\n\n감사합니다. ^^",
+  "variables": [
+    "product_name",
+    "exchange_rate_diff",
+    "base_exchange_rate",
+    "current_exchange_rate",
+    "additional_fee_per_person",
+    "group_members_text",
+    "total_balance",
+    "payment_due_date",
+    "bank_account"
+  ],
+  "category": "travel",
+  "created_at": "2025-07-05T07:47:23.300248",
+  "updated_at": "2025-07-05T07:47:23.300248"
+}
