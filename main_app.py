@@ -472,11 +472,6 @@ def show_template_step():
     # 미리보기에 사용할 실제 데이터 생성
     preview_variables = {}
     try:
-        # 가. 고정 데이터 추가
-        for var_name, cell in fixed_data_mapping.items():
-            preview_variables[var_name] = get_cell_value(st.session_state.sheet_data, cell)
-
-        # 나. 엑셀 첫 번째 행 데이터 추가
         df_table = pd.read_excel(
             st.session_state.uploaded_file,
             sheet_name=st.session_state.selected_sheet,
@@ -487,53 +482,37 @@ def show_template_step():
             for excel_col, var_name in column_mappings.items():
                 if excel_col in first_row:
                     preview_variables[var_name] = first_row[excel_col]
-
-        # 다. 자동 계산 변수 (예시값) 추가
+        for var_name, cell in fixed_data_mapping.items():
+            preview_variables[var_name] = get_cell_value(st.session_state.sheet_data, cell)
         preview_variables['group_members_text'] = f"{preview_variables.get('name', '아무개')}님 외 1명"
         preview_variables['group_size'] = 2
         preview_variables['additional_fee_per_person'] = 70000
-
     except Exception as e:
         st.warning(f"미리보기 데이터 생성 중 오류 발생: {e}")
 
 
     # --- 2. 상단 레이아웃: [좌] 편집기 | [우] 미리보기 ---
     editor_col, preview_col = st.columns(2, gap="large")
-
     with editor_col:
         st.markdown("##### 📝 메시지 템플릿 편집")
         default_template = st.session_state.get('template', "[여행처럼]\n안녕하세요, {product_name} 안내입니다.")
-        template = st.text_area(
-            "Template Editor",
-            value=default_template,
-            height=500,
-            key="template_editor",
-            label_visibility="collapsed",
-            help="템플릿을 작성하고 오른쪽에서 실시간 미리보기를 확인하세요."
-        )
+        template = st.text_area("Template Editor", value=default_template, height=500, key="template_editor", label_visibility="collapsed")
         st.session_state.template = template
-
     with preview_col:
-        # 실제 데이터를 기반으로 미리보기 생성
         show_template_preview(template, preview_variables)
 
 
     # --- 3. 하단 레이아웃: 템플릿 관리 및 변수 목록 ---
     st.markdown("---")
-
     with st.expander("📂 내 템플릿 관리 (가져오기 및 변수 스마트 매핑)", expanded=True):
-        uploaded_template_file = st.file_uploader(
-            "사용자 정의 템플릿 파일(.txt)을 업로드하세요.",
-            type=['txt'],
-            key="template_uploader"
-        )
+        uploaded_template_file = st.file_uploader("사용자 정의 템플릿 파일(.txt)을 업로드하세요.", type=['txt'], key="template_uploader")
 
         if uploaded_template_file:
-            # st.file_uploader가 재실행 시 초기화되는 것을 방지하기 위해 세션 상태 활용
-            if 'uploaded_template_content' not in st.session_state or st.session_state.get('uploader_key') != uploaded_template_file.id:
+            # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ [핵심 수정 부분] .id를 .file_id로 변경 ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+            if 'uploaded_template_content' not in st.session_state or st.session_state.get('uploader_key') != uploaded_template_file.file_id:
                 st.session_state.uploaded_template_content = uploaded_template_file.read().decode('utf-8')
-                st.session_state.uploader_key = uploaded_template_file.id
-                # 새 파일이 업로드되면 매핑 상태 초기화
+                st.session_state.uploader_key = uploaded_template_file.file_id
+            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
                 if 'template_to_system_map' in st.session_state:
                     del st.session_state.template_to_system_map
 
@@ -544,7 +523,6 @@ def show_template_step():
             if not unmapped_template_vars:
                 st.session_state.template = uploaded_content
                 st.success("✅ 템플릿이 성공적으로 적용되었습니다. 모든 변수가 현재 시스템과 일치합니다.")
-                # 세션 정리 후 재실행
                 if 'uploaded_template_content' in st.session_state: del st.session_state.uploaded_template_content
                 if 'uploader_key' in st.session_state: del st.session_state.uploader_key
                 st.rerun()
@@ -568,13 +546,8 @@ def show_template_step():
                     new_template = uploaded_content
                     for template_var, system_var in st.session_state.template_to_system_map.items():
                         if system_var != "선택 안 함":
-                            new_template = re.sub(
-                                r'\{' + re.escape(template_var) + r'(:[^}]+)?\}',
-                                '{' + system_var + r'\\1}',
-                                new_template
-                            )
+                            new_template = re.sub(r'\{' + re.escape(template_var) + r'(:[^}]+)?\}', '{' + system_var + r'\\1}', new_template)
                     st.session_state.template = new_template
-                    # 작업 완료 후 세션 상태 정리
                     del st.session_state.template_to_system_map
                     del st.session_state.uploaded_template_content
                     del st.session_state.uploader_key
@@ -584,22 +557,18 @@ def show_template_step():
     st.markdown("---")
     st.markdown("##### 💡 사용 가능한 변수 목록")
     var_tabs = st.tabs(["**엑셀 컬럼**", "**고정 정보**", "**자동 계산**"])
-
     with var_tabs[0]:
         st.markdown("2단계에서 매핑한 `엑셀 컬럼 → {변수명}` 목록입니다.")
         for excel_col, var_name in sorted(column_mappings.items(), key=lambda item: item[1]):
             st.text(f"'{excel_col}' → {{{var_name}}}")
-
     with var_tabs[1]:
         st.markdown("2단계 기본 설정에서 매핑된 변수입니다.")
         for var in sorted(fixed_vars):
             st.code(f"{{{var}}}", language="text")
-
     with var_tabs[2]:
         st.markdown("시스템에서 자동으로 계산되는 변수입니다.")
         for var in sorted(calculated_vars):
             st.code(f"{{{var}}}", language="text")
-
     with st.expander("⚡ 빠른 변수 삽입 (클릭하여 복사)"):
         quick_cols = st.columns(5)
         for i, var_name in enumerate(all_available_vars):
@@ -607,19 +576,17 @@ def show_template_step():
                 st.info(f"아래 텍스트를 복사하여 사용하세요:")
                 st.code(f"{{{var_name}}}", language="text")
 
-
     # --- 4. 네비게이션 버튼 ---
     st.markdown("---")
     nav_cols = st.columns([1, 1])
     if nav_cols[0].button("⬅️ 이전 단계 (매핑 설정)", use_container_width=True):
         st.session_state.current_step = 2
         st.rerun()
-
     if nav_cols[1].button("➡️ 다음 단계 (메시지 생성)", type="primary", use_container_width=True):
         st.session_state.current_step = 4
         st.success("✅ 메시지 생성 단계로 이동합니다!")
         st.rerun()
-        
+
 def show_message_generation_step():
     st.header("4️⃣ 메시지 생성")
     
