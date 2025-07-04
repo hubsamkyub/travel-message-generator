@@ -253,33 +253,22 @@ def show_file_upload_step():
                     """)
 
 # main_app.py 파일에서 show_mapping_step 함수를 아래 코드로 교체하세요.
+# main_app.py 파일에서 show_mapping_step 함수를 아래 코드로 교체하세요.
 
 def show_mapping_step():
     st.header("2️⃣ 매핑 설정")
 
     if 'uploaded_file' not in st.session_state:
-        create_info_card(
-            "파일이 필요합니다", "먼저 엑셀 파일을 업로드해주세요.", "⚠️", "warning"
-        )
+        create_info_card("파일이 필요합니다", "먼저 엑셀 파일을 업로드해주세요.", "⚠️", "warning")
         if st.button("⬅️ 이전 단계로"):
             st.session_state.current_step = 1
             st.rerun()
         return
 
-    create_info_card(
-        "매핑 설정 안내",
-        """
-        • **기본 설정**: 고정 정보의 셀 주소와 데이터 테이블의 헤더 행 번호를 입력합니다.
-        • **동적 컬럼 매핑**: 엑셀의 각 컬럼에 사용할 **변수명을 지정**합니다. 이 변수명은 템플릿에서 `{변수명}` 형태로 사용됩니다.
-        • **필수 매핑**: `team_name`, `sender_group`, `name` 변수는 반드시 하나 이상의 컬럼과 매핑되어야 합니다.
-        """,
-        "🔧"
-    )
-
-    # 탭 구조를 2개로 재구성
+    # --- 탭 UI 구성 ---
     tab1, tab2 = st.tabs(["⚙️ 기본 설정 (고정 정보, 테이블)", "🔗 동적 컬럼 매핑"])
-    
-    # 탭1: 고정 정보 및 테이블 설정
+
+    # 탭1: 고정 정보 및 테이블 설정 (이전과 동일)
     with tab1:
         st.markdown("### 📍 고정 정보 셀 주소 설정")
         col1, col2 = st.columns(2)
@@ -292,10 +281,8 @@ def show_mapping_step():
 
         st.markdown("### 📊 테이블 구조 설정")
         header_row = st.number_input(
-            "📋 헤더 행 번호 (컬럼명이 있는 행)", min_value=1, max_value=50, value=st.session_state.get("header_row", 9),
-            help="1부터 시작하는 행 번호를 입력하세요."
+            "📋 헤더 행 번호 (컬럼명이 있는 행)", min_value=1, max_value=50, value=st.session_state.get("header_row", 9)
         )
-
         # UI 상태 유지를 위해 세션에 값 저장
         st.session_state.product_name_cell = product_name_cell
         st.session_state.payment_due_cell = payment_due_cell
@@ -303,84 +290,99 @@ def show_mapping_step():
         st.session_state.current_exchange_cell = current_exchange_cell
         st.session_state.header_row = header_row
 
-    # 탭2: 동적 컬럼 매핑
+    # 탭2: 동적 컬럼 매핑 (개선된 UI)
     with tab2:
-        st.markdown("### 🔗 동적 컬럼 매핑")
-        st.markdown("엑셀의 각 컬럼에 사용할 변수명을 지정하거나 수정하세요.")
-
         try:
-            # 헤더 행 번호를 기준으로 데이터프레임 다시 읽기
             df_table = pd.read_excel(
                 st.session_state.uploaded_file,
                 sheet_name=st.session_state.selected_sheet,
                 header=header_row - 1
-            ).dropna(how='all', axis=1) # 값이 모두 비어있는 컬럼은 무시
+            ).dropna(how='all', axis=1)
+            available_columns = ["선택 안 함"] + df_table.columns.tolist()
 
-            available_columns = df_table.columns.tolist()
-
-            # 동적 매핑 초기화 또는 자동 재생성
-            if 'dynamic_mappings' not in st.session_state or st.button("🔄 변수명 자동 생성"):
-                st.session_state.dynamic_mappings = {col: generate_variable_name(str(col)) for col in available_columns}
-                st.success("✅ 변수명이 자동으로 생성되었습니다.")
-
-            # UI 컬럼 헤더
-            col_h1, col_h2, col_h3 = st.columns([2, 2, 1])
-            col_h1.markdown("**엑셀 컬럼**")
-            col_h2.markdown("**프로그램 변수명**")
-            col_h3.markdown("**필수 지정**")
+            # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ [핵심 수정 부분] ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+            # 1. 필수 변수 매핑 (더 직관적인 Selectbox 사용)
+            st.markdown("#### 🔴 필수 변수 지정")
+            st.markdown("아래 3개 항목은 반드시 엑셀의 해당 컬럼과 연결해야 합니다.")
             
-            # 동적 매핑 UI 생성
-            final_column_mappings = {}
-            for col_header in available_columns:
-                c1, c2, c3 = st.columns([2, 2, 1])
+            required_cols = st.columns(3)
+            # st.selectbox를 사용하여 각 필수 변수에 해당하는 엑셀 컬럼을 명시적으로 선택
+            team_col = required_cols[0].selectbox(
+                "팀(team_name) 컬럼", available_columns,
+                index=available_columns.index(st.session_state.get("team_col_selection", "선택 안 함"))
+            )
+            sender_group_col = required_cols[1].selectbox(
+                "그룹(sender_group) 컬럼", available_columns,
+                index=available_columns.index(st.session_state.get("sender_group_selection", "선택 안 함"))
+            )
+            name_col = required_cols[2].selectbox(
+                "이름(name) 컬럼", available_columns,
+                index=available_columns.index(st.session_state.get("name_col_selection", "선택 안 함"))
+            )
+
+            # 사용자의 선택을 세션에 저장하여 상태 유지
+            st.session_state.team_col_selection = team_col
+            st.session_state.sender_group_selection = sender_group_col
+            st.session_state.name_col_selection = name_col
+
+            # 필수 항목 선택 여부 확인
+            missing_required = []
+            if team_col == "선택 안 함": missing_required.append("팀")
+            if sender_group_col == "선택 안 함": missing_required.append("그룹")
+            if name_col == "선택 안 함": missing_required.append("이름")
+
+            if missing_required:
+                st.error(f"**필수 변수 미지정:** `{', '.join(missing_required)}`에 해당하는 컬럼을 선택해주세요.")
+
+            st.markdown("---")
+
+            # 2. 선택(옵션) 변수 매핑
+            st.markdown("#### 🔵 선택 변수 지정 (템플릿에 사용할 추가 정보)")
+            st.markdown("엑셀의 각 컬럼에 사용할 변수명을 자유롭게 지정하세요.")
+
+            # 필수 항목으로 선택된 컬럼은 제외하고 나머지 컬럼만 표시
+            optional_columns = [col for col in df_table.columns if col not in [team_col, sender_group_col, name_col]]
+            
+            # 변수명 자동 생성
+            if 'dynamic_mappings' not in st.session_state or st.button("🔄 선택 변수명 자동 생성"):
+                st.session_state.dynamic_mappings = {col: generate_variable_name(str(col)) for col in optional_columns}
+
+            ui_cols = st.columns(2)
+            ui_cols[0].markdown("**엑셀 컬럼**")
+            ui_cols[1].markdown("**프로그램 변수명 (템플릿에 사용)**")
+
+            for col_header in optional_columns:
+                c1, c2 = st.columns(2)
                 c1.markdown(f"`{col_header}`")
-                
-                # 사용자가 변수명 입력
-                var_name = c2.text_input(
+                st.session_state.dynamic_mappings[col_header] = c2.text_input(
                     f"var_for_{col_header}",
                     value=st.session_state.dynamic_mappings.get(col_header, ""),
                     label_visibility="collapsed"
                 )
-                
-                # 필수 변수 지정
-                with c3:
-                    is_team = st.checkbox("팀", key=f"team_{col_header}", help="이 컬럼을 'team_name'으로 지정합니다.")
-                    is_group = st.checkbox("그룹", key=f"group_{col_header}", help="이 컬럼을 'sender_group'으로 지정합니다.")
-                    is_name = st.checkbox("이름", key=f"name_{col_header}", help="이 컬럼을 'name'으로 지정합니다.")
-
-                # 체크박스에 따라 변수명 강제 지정
-                if is_team: var_name = "team_name"
-                if is_group: var_name = "sender_group"
-                if is_name: var_name = "name"
-                
-                if var_name:
-                    final_column_mappings[col_header] = var_name
-
-            # 필수 변수 매핑 확인
-            mapped_vars = final_column_mappings.values()
-            missing_required = [v for v in ['team_name', 'sender_group', 'name'] if v not in mapped_vars]
-            if missing_required:
-                st.error(f"**필수 변수 미지정:** `{', '.join(missing_required)}`을(를) 컬럼과 매핑해주세요.")
+            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
             # 최종 매핑 정보 구성
+            final_column_mappings = {}
+            if team_col != "선택 안 함": final_column_mappings[team_col] = 'team_name'
+            if sender_group_col != "선택 안 함": final_column_mappings[sender_group_col] = 'sender_group'
+            if name_col != "선택 안 함": final_column_mappings[name_col] = 'name'
+            
+            # 선택 변수들을 최종 매핑에 추가
+            for col, var_name in st.session_state.dynamic_mappings.items():
+                if col in optional_columns and var_name:
+                    final_column_mappings[col] = var_name
+
             st.session_state.mapping_data = {
-                "fixed_data_mapping": {
-                    "product_name": product_name_cell,
-                    "payment_due_date": payment_due_cell,
-                    "base_exchange_rate": base_exchange_cell,
-                    "current_exchange_rate": current_exchange_cell,
-                },
-                "table_settings": {"header_row": header_row},
+                "fixed_data_mapping": { "product_name": product_name_cell, "payment_due_date": payment_due_cell, "base_exchange_rate": base_exchange_cell, "current_exchange_rate": current_exchange_cell },
+                "table_settings": { "header_row": header_row },
                 "column_mappings": final_column_mappings
             }
-            
             with st.expander("📋 현재 매핑 요약 보기"):
                 st.json(st.session_state.mapping_data)
 
         except Exception as e:
             show_error_details(e, "테이블 데이터를 읽는 중")
-            st.markdown("**💡 해결 방법:**\n- 헤더 행 번호가 올바른지 확인하세요.\n- 선택한 시트에 데이터가 있는지 확인하세요.")
-            missing_required = ['team_name'] # 다음 단계 버튼 비활성화를 위해 임의값 설정
+            missing_required = ['팀'] # 오류 발생 시 다음 단계 버튼 비활성화
 
     # 네비게이션 버튼
     st.markdown("---")
@@ -390,13 +392,12 @@ def show_mapping_step():
             st.session_state.current_step = 1
             st.rerun()
     with col_nav2:
-        # 필수 변수가 모두 매핑되었을 때만 다음 단계 버튼 활성화
-        is_disabled = 'missing_required' in locals() and bool(missing_required)
+        is_disabled = bool(missing_required) # 필수 항목이 선택되지 않으면 비활성화
         if st.button("➡️ 다음 단계: 템플릿 설정", type="primary", use_container_width=True, disabled=is_disabled):
             st.session_state.current_step = 3
             st.success("✅ 템플릿 설정 단계로 이동합니다!")
             st.rerun()
-            
+
 def preview_fixed_data(fixed_mapping):
     """고정 정보 미리보기"""
     try:
