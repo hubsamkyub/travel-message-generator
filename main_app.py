@@ -8,6 +8,7 @@ import zipfile
 import io
 from enhanced_processor import EnhancedDataProcessor, EnhancedMessageGenerator
 from ui_helpers import *
+from preset_manager import PresetManager
 
 # 페이지 설정
 st.set_page_config(
@@ -224,7 +225,8 @@ def show_file_upload_step():
             """)
             st.markdown("**📥 샘플 파일 다운로드**")
             st.markdown("`create_sample_data.py`를 실행하여 샘플 엑셀 파일을 생성할 수 있습니다.")
-# main_app.py 파일에서 show_mapping_step 함수를 아래 코드로 교체하세요.
+
+
 def show_mapping_step():
     st.header("2️⃣ 매핑 설정")
 
@@ -464,15 +466,18 @@ def get_column_index(columns, search_term):
 def show_template_step():
     st.header("3️⃣ 템플릿 설정")
 
+    # Manager 인스턴스 생성
+    template_manager = TemplateManager()
+
     # 매핑 데이터 유효성 검사
     if 'mapping_data' not in st.session_state or not st.session_state.mapping_data.get('column_mappings'):
-        create_info_card("매핑 설정이 필요합니다", "이전 단계에서 엑셀 컬럼과 변수 매핑을 먼저 완료해주세요.", "⚠️", "warning")
+        create_info_card("매핑 설정이 필요합니다", "이전 단계에서 매핑 설정을 완료해주세요.", "⚠️", "warning")
         if st.button("⬅️ 이전 단계로"):
             st.session_state.current_step = 2
             st.rerun()
         return
 
-    # --- 1. 변수 목록 및 미리보기 데이터 준비 ---
+    # --- 1. 변수 및 데이터 준비 ---
     fixed_data_mapping = st.session_state.mapping_data.get('fixed_data_mapping', {})
     column_mappings = st.session_state.mapping_data.get('column_mappings', {})
     header_row = st.session_state.mapping_data.get('table_settings', {}).get('header_row', 1)
@@ -497,87 +502,104 @@ def show_template_step():
     except Exception as e:
         st.warning(f"미리보기 데이터 생성 중 오류 발생: {e}")
 
-    # --- 2. 상단 레이아웃: [좌] 편집기 | [우] 미리보기 ---
+    # --- 2. 사이드바: 템플릿 라이브러리 ---
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("### 🗂️ 내 템플릿 라이브러리")
+        templates = template_manager.get_template_list()
+        template_options = {t['name']: t['id'] for t in templates}
+        if not templates:
+            st.info("저장된 템플릿이 없습니다.")
+        
+        selected_template_name = st.selectbox("라이브러리에서 불러오기", ["선택 안 함"] + list(template_options.keys()))
+        
+        btn_cols = st.columns(2)
+        if btn_cols[0].button("📂 불러오기", use_container_width=True, disabled=(selected_template_name == "선택 안 함")):
+            template_id = template_options[selected_template_name]
+            loaded_data = template_manager.load_template(template_id)
+            if loaded_data:
+                st.session_state.template = loaded_data['content']
+                st.success(f"'{selected_template_name}'을(를) 불러왔습니다.")
+                st.rerun()
+        
+        if btn_cols[1].button("🗑️ 삭제", use_container_width=True, disabled=(selected_template_name == "선택 안 함")):
+            template_id = template_options[selected_template_name]
+            if template_manager.delete_template(template_id):
+                st.success(f"'{selected_template_name}'을(를) 삭제했습니다.")
+                st.rerun()
+
+        st.markdown("---")
+        new_template_name = st.text_input("현재 템플릿 저장 이름")
+        if st.button("💾 현재 템플릿 저장", disabled=not new_template_name):
+            current_template_content = st.session_state.get('template', '')
+            if template_manager.save_template(new_template_name, current_template_content):
+                st.success(f"'{new_template_name}' 이름으로 저장했습니다.")
+                st.rerun()
+
+
+    # --- 3. 메인 화면: 편집기 및 미리보기 ---
     editor_col, preview_col = st.columns(2, gap="large")
     with editor_col:
         st.markdown("##### 📝 메시지 템플릿 편집")
         default_template = st.session_state.get('template', "[여행처럼]\n안녕하세요, {product_name} 안내입니다.")
         template = st.text_area("Template Editor", value=default_template, height=500, key="template_editor", label_visibility="collapsed")
         st.session_state.template = template
+        
+        char_count = len(template)
+        sms_type = "LMS" if char_count > 90 else "SMS"
+        sms_count_str = f"{sms_type} 1건"
+        if char_count > 2000: sms_count_str = f"LMS {((char_count - 1) // 2000) + 1}건"
+        st.caption(f"글자 수: {char_count}자 | 예상 메시지: {sms_count_str}")
     with preview_col:
         show_template_preview(template, preview_variables)
 
+    # --- 4. 스마트 매핑 및 변수 목록 ---
     st.markdown("---")
-
-    # --- 3. 하단 레이아웃: 템플릿 관리 및 변수 목록 ---
     
-    # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ [핵심 수정 부분] ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-    # 콜백 함수 정의: 파일이 업로드/변경될 때만 실행될 로직
-    def on_template_upload():
-        uploaded_file = st.session_state.get("template_uploader")
-        if not uploaded_file:
-            return
-
-        # 상태 초기화
-        st.session_state.pop('template_to_system_map', None)
-        
-        uploaded_content = uploaded_file.read().decode('utf-8')
-        st.session_state.uploaded_template_content = uploaded_content
-        
-        template_vars = set(re.findall(r'\{(\w+)(?::[^}]+)?\}', uploaded_content))
-        unmapped_template_vars = [var for var in template_vars if var not in all_available_vars]
-
-        if not unmapped_template_vars:
-            # 매핑이 필요 없으면 바로 템플릿 적용
-            st.session_state.template = uploaded_content
-            st.session_state.pop('uploaded_template_content', None)
-            st.success("✅ 템플릿이 성공적으로 적용되었습니다.")
-        else:
-            # 매핑이 필요하면, 매핑 UI를 띄우기 위한 상태 설정
-            st.session_state.template_to_system_map = {var: "선택 안 함" for var in unmapped_template_vars}
-
-    with st.expander("📂 내 템플릿 관리 (가져오기 및 변수 스마트 매핑)", expanded=True):
-        st.file_uploader(
-            "사용자 정의 템플릿 파일(.txt)을 업로드하세요.",
-            type=['txt'],
-            key="template_uploader",
-            on_change=on_template_upload # 파일 업로드 시 콜백 함수 실행
+    with st.expander("📂 내 템플릿 파일 가져오기 (스마트 변수 매핑)", expanded=False):
+        uploaded_template_file = st.file_uploader(
+            "사용자 정의 템플릿 파일(.txt)을 업로드하세요.", type=['txt'],
+            key="template_file_uploader"
         )
+        
+        if uploaded_template_file is not None:
+            # 파일이 업로드 되면, 바로 분석 시작
+            uploaded_content = uploaded_template_file.getvalue().decode("utf-8")
+            template_vars = set(re.findall(r'\{(\w+)(?::[^}]+)?\}', uploaded_content))
+            unmapped_vars = [var for var in template_vars if var not in all_available_vars]
 
-        # 'template_to_system_map' 상태가 존재할 때만 매핑 UI 표시
-        if 'template_to_system_map' in st.session_state:
-            st.warning("⚠️ 템플릿의 변수와 시스템 변수가 다릅니다. 아래에서 매핑을 조정해주세요.")
-            st.markdown("**스마트 변수 매핑 도우미**")
-            
-            unmapped_vars = list(st.session_state.template_to_system_map.keys())
-            for var in unmapped_vars:
-                cols = st.columns([2, 1, 2])
-                cols[0].markdown(f"템플릿 변수: `{var}`")
-                cols[1].markdown("→")
-                # selectbox의 상태는 st.session_state.template_to_system_map에 의해 관리됨
-                st.session_state.template_to_system_map[var] = cols[2].selectbox(f"map_for_{var}", ["선택 안 함"] + all_available_vars, label_visibility="collapsed")
-
-            if st.button("🚀 매핑 적용하고 템플릿 업데이트", type="primary"):
-                new_template = st.session_state.uploaded_template_content
-                for template_var, system_var in st.session_state.template_to_system_map.items():
-                    if system_var != "선택 안 함":
-                        pattern = r'\{' + re.escape(template_var) + r'(:[^}]+)?\}'
-                        replacement = lambda m: f"{{{system_var}{m.group(1) or ''}}}"
-                        new_template = re.sub(pattern, replacement, new_template)
+            if not unmapped_vars:
+                st.session_state.template = uploaded_content
+                st.success("✅ 템플릿이 성공적으로 적용되었습니다. 모든 변수가 현재 시스템과 일치합니다.")
+                # 성공 후 위젯을 초기화하기 위해 uploader의 상태를 초기화하는 것은 Streamlit에서 직접 지원하지 않음
+                # 대신 사용자에게 명확한 메시지를 전달하는 것이 더 나은 UX가 될 수 있음
+            else:
+                st.warning("⚠️ 템플릿의 변수와 시스템 변수가 다릅니다. 아래에서 매핑을 조정해주세요.")
+                st.markdown("**스마트 변수 매핑 도우미**")
                 
-                st.session_state.template = new_template
-                st.success("✅ 매핑이 적용되었습니다! 템플릿이 업데이트되었습니다.")
-                
-                # 작업 완료 후, 매핑 UI를 다시 띄우지 않도록 관련 상태를 모두 삭제
-                st.session_state.pop('template_to_system_map', None)
-                st.session_state.pop('uploaded_template_content', None)
-                st.rerun() # UI를 즉시 새로고침하여 매핑 UI를 숨김
+                # 매핑을 위한 딕셔너리 준비
+                mapping_selections = {}
+                for var in unmapped_vars:
+                    cols = st.columns([2, 1, 2])
+                    cols[0].markdown(f"템플릿 변수: `{var}`")
+                    cols[1].markdown("→")
+                    mapping_selections[var] = cols[2].selectbox(f"map_for_{var}", ["선택 안 함"] + all_available_vars, label_visibility="collapsed")
 
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+                if st.button("🚀 매핑 적용하고 템플릿 업데이트", type="primary"):
+                    new_template = uploaded_content
+                    for template_var, system_var in mapping_selections.items():
+                        if system_var != "선택 안 함":
+                            pattern = r'\{' + re.escape(template_var) + r'(:[^}]+)?\}'
+                            replacement = lambda m: f"{{{system_var}{m.group(1) or ''}}}"
+                            new_template = re.sub(pattern, replacement, new_template)
+                    
+                    st.session_state.template = new_template
+                    st.success("✅ 매핑이 적용되었습니다! 템플릿이 업데이트되었습니다.")
+                    # 이 시점에서 st.rerun()을 호출하지 않아, 사용자가 결과를 확인할 수 있도록 함
 
     st.markdown("---")
     st.markdown("##### 💡 사용 가능한 변수 목록")
-    # (이하 변수 목록 표시 UI는 이전과 동일)
+    
     var_tabs = st.tabs(["**엑셀 컬럼**", "**고정 정보**", "**자동 계산**"])
     with var_tabs[0]:
         st.markdown("2단계에서 매핑한 `엑셀 컬럼 → {변수명}` 목록입니다.")
@@ -606,7 +628,7 @@ def show_template_step():
         st.rerun()
     if nav_cols[1].button("➡️ 다음 단계 (메시지 생성)", type="primary", use_container_width=True):
         st.session_state.current_step = 4
-        st.success("✅ 메시지 생성 단계로 이동합니다!")
+        st.success("✅ 템플릿 설정이 완료되었습니다. 다음 단계로 이동합니다.")
         st.rerun()
 
 def show_message_generation_step():
