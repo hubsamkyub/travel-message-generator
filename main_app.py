@@ -446,7 +446,6 @@ def get_column_index(columns, search_term):
     return 0
 
 # main_app.py 파일에서 show_template_step 함수를 아래 코드로 교체하세요.
-
 def show_template_step():
     st.header("3️⃣ 템플릿 설정")
 
@@ -466,6 +465,11 @@ def show_template_step():
     column_mappings = st.session_state.mapping_data.get('column_mappings', {})
     header_row = st.session_state.mapping_data.get('table_settings', {}).get('header_row', 1)
 
+    fixed_vars = list(fixed_data_mapping.keys())
+    dynamic_vars = list(column_mappings.values())
+    calculated_vars = ['group_members_text', 'group_size', 'additional_fee_per_person']
+    all_available_vars = sorted(list(set(fixed_vars + dynamic_vars + calculated_vars)))
+
     # 미리보기에 사용할 실제 데이터 생성
     preview_variables = {}
     try:
@@ -479,16 +483,16 @@ def show_template_step():
             sheet_name=st.session_state.selected_sheet,
             header=header_row - 1
         )
-        first_row = df_table.iloc[0] # 첫 번째 데이터 행
-
-        for excel_col, var_name in column_mappings.items():
-            if excel_col in first_row:
-                preview_variables[var_name] = first_row[excel_col]
+        if not df_table.empty:
+            first_row = df_table.iloc[0]
+            for excel_col, var_name in column_mappings.items():
+                if excel_col in first_row:
+                    preview_variables[var_name] = first_row[excel_col]
 
         # 다. 자동 계산 변수 (예시값) 추가
         preview_variables['group_members_text'] = f"{preview_variables.get('name', '아무개')}님 외 1명"
         preview_variables['group_size'] = 2
-        preview_variables['additional_fee_per_person'] = 70 # 예시 값
+        preview_variables['additional_fee_per_person'] = 70000
 
     except Exception as e:
         st.warning(f"미리보기 데이터 생성 중 오류 발생: {e}")
@@ -500,34 +504,95 @@ def show_template_step():
     with editor_col:
         st.markdown("##### 📝 메시지 템플릿 편집")
         default_template = st.session_state.get('template', "[여행처럼]\n안녕하세요, {product_name} 안내입니다.")
-        template = st.text_area("Template Editor", value=default_template, height=500, key="template_editor", label_visibility="collapsed")
+        template = st.text_area(
+            "Template Editor",
+            value=default_template,
+            height=500,
+            key="template_editor",
+            label_visibility="collapsed",
+            help="템플릿을 작성하고 오른쪽에서 실시간 미리보기를 확인하세요."
+        )
         st.session_state.template = template
 
     with preview_col:
-        # 생성된 실제 데이터를 미리보기 함수에 전달
+        # 실제 데이터를 기반으로 미리보기 생성
         show_template_preview(template, preview_variables)
 
 
-    # --- 3. 하단 레이아웃: 변수 목록 및 빠른 삽입 ---
+    # --- 3. 하단 레이아웃: 템플릿 관리 및 변수 목록 ---
     st.markdown("---")
-    st.markdown("##### 💡 사용 가능한 변수 및 빠른 삽입")
-    
-    # (변수 목록 표시는 이전과 동일)
-    fixed_vars = list(fixed_data_mapping.keys())
-    dynamic_vars = list(column_mappings.values())
-    calculated_vars = ['group_members_text', 'group_size', 'additional_fee_per_person']
-    all_available_vars = sorted(list(set(fixed_vars + dynamic_vars + calculated_vars)))
 
+    with st.expander("📂 내 템플릿 관리 (가져오기 및 변수 스마트 매핑)", expanded=True):
+        uploaded_template_file = st.file_uploader(
+            "사용자 정의 템플릿 파일(.txt)을 업로드하세요.",
+            type=['txt'],
+            key="template_uploader"
+        )
+
+        if uploaded_template_file:
+            # st.file_uploader가 재실행 시 초기화되는 것을 방지하기 위해 세션 상태 활용
+            if 'uploaded_template_content' not in st.session_state or st.session_state.uploader_key != uploaded_template_file.id:
+                st.session_state.uploaded_template_content = uploaded_template_file.read().decode('utf-8')
+                st.session_state.uploader_key = uploaded_template_file.id
+                # 새 파일이 업로드되면 매핑 상태 초기화
+                if 'template_to_system_map' in st.session_state:
+                    del st.session_state.template_to_system_map
+
+            uploaded_content = st.session_state.uploaded_template_content
+            template_vars = set(re.findall(r'\{(\w+)(?::[^}]+)?\}', uploaded_content))
+            unmapped_template_vars = [var for var in template_vars if var not in all_available_vars]
+
+            if not unmapped_template_vars:
+                st.session_state.template = uploaded_content
+                st.success("✅ 템플릿이 성공적으로 적용되었습니다. 모든 변수가 현재 시스템과 일치합니다.")
+                st.experimental_rerun()
+            else:
+                st.warning(f"⚠️ 템플릿의 변수와 시스템 변수가 다릅니다. 아래에서 매핑을 조정해주세요.")
+                if 'template_to_system_map' not in st.session_state:
+                    st.session_state.template_to_system_map = {var: "선택 안 함" for var in unmapped_template_vars}
+
+                st.markdown("**스마트 변수 매핑 도우미**")
+                for var in unmapped_template_vars:
+                    cols = st.columns([2, 1, 2])
+                    cols[0].markdown(f"템플릿 변수: `{var}`")
+                    cols[1].markdown("→")
+                    st.session_state.template_to_system_map[var] = cols[2].selectbox(
+                        f"map_for_{var}", ["선택 안 함"] + all_available_vars,
+                        index=(["선택 안 함"] + all_available_vars).index(st.session_state.template_to_system_map.get(var, "선택 안 함")),
+                        label_visibility="collapsed"
+                    )
+
+                if st.button("🚀 매핑 적용하고 템플릿 업데이트", type="primary"):
+                    new_template = uploaded_content
+                    for template_var, system_var in st.session_state.template_to_system_map.items():
+                        if system_var != "선택 안 함":
+                            new_template = re.sub(
+                                r'\{' + re.escape(template_var) + r'(:[^}]+)?\}',
+                                '{' + system_var + r'\1}',
+                                new_template
+                            )
+                    st.session_state.template = new_template
+                    # 작업 완료 후 세션 상태 정리
+                    del st.session_state.template_to_system_map
+                    del st.session_state.uploaded_template_content
+                    del st.session_state.uploader_key
+                    st.success("✅ 매핑이 적용되었습니다! 템플릿이 업데이트되었습니다.")
+                    st.experimental_rerun()
+
+    st.markdown("---")
+    st.markdown("##### 💡 사용 가능한 변수 목록")
     var_tabs = st.tabs(["**엑셀 컬럼**", "**고정 정보**", "**자동 계산**"])
+
     with var_tabs[0]:
-        st.markdown("`엑셀 컬럼 → {변수명}` 목록입니다.")
+        st.markdown("2단계에서 매핑한 `엑셀 컬럼 → {변수명}` 목록입니다.")
         for excel_col, var_name in sorted(column_mappings.items(), key=lambda item: item[1]):
             st.text(f"'{excel_col}' → {{{var_name}}}")
-    # (이하 고정 정보, 자동 계산 탭 동일)
+
     with var_tabs[1]:
-        st.markdown("기본 설정에서 매핑된 변수입니다.")
+        st.markdown("2단계 기본 설정에서 매핑된 변수입니다.")
         for var in sorted(fixed_vars):
             st.code(f"{{{var}}}", language="text")
+
     with var_tabs[2]:
         st.markdown("시스템에서 자동으로 계산되는 변수입니다.")
         for var in sorted(calculated_vars):
@@ -540,12 +605,14 @@ def show_template_step():
                 st.info(f"아래 텍스트를 복사하여 사용하세요:")
                 st.code(f"{{{var_name}}}", language="text")
 
+
     # --- 4. 네비게이션 버튼 ---
     st.markdown("---")
     nav_cols = st.columns([1, 1])
     if nav_cols[0].button("⬅️ 이전 단계 (매핑 설정)", use_container_width=True):
         st.session_state.current_step = 2
         st.rerun()
+
     if nav_cols[1].button("➡️ 다음 단계 (메시지 생성)", type="primary", use_container_width=True):
         st.session_state.current_step = 4
         st.success("✅ 메시지 생성 단계로 이동합니다!")
