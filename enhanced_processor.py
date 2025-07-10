@@ -286,8 +286,9 @@ class EnhancedMessageGenerator:
         return [int(part) if part.isdigit() else part.lower() 
                 for part in re.split(r'(\d+)', str(text))]
     
+
     def generate_messages(self, template, group_data, fixed_data, group_exchange_rates=None):
-        """메시지 생성 - 동적 변수 완전 지원 (타입 안전 처리)"""
+        """스마트 템플릿을 지원하는 메시지 생성 함수"""
         if not group_data:
             raise ValueError("그룹 데이터가 없습니다.")
         
@@ -298,18 +299,52 @@ class EnhancedMessageGenerator:
             self.generated_messages = {}
             self.final_messages = {}
             
-            has_additional_amount = False  # 추가 금액이 있는 그룹 체크
+            # 템플릿에서 사용된 컬럼 참조들 미리 추출
+            import re
+            column_refs = re.findall(r'\[컬럼:([^\]]+)\]', template)
             
             for group_id, group_info in group_data.items():
-                # 동적 변수 생성 - 타입 안전 처리
+                # 1. 스마트 템플릿 전처리: [컬럼:컬럼명] → {컬럼명}으로 변환
+                processed_template = template
+                
+                for col_name in column_refs:
+                    # 그룹 정보에서 해당 컬럼 값 찾기
+                    col_value = None
+                    
+                    # 그룹 정보에서 직접 찾기 (이미 매핑된 데이터에서)
+                    for key, value in group_info.items():
+                        # 원본 엑셀 컬럼명과 매치되는지 확인
+                        if key == col_name or key.endswith(f"_{col_name}") or col_name in key:
+                            col_value = value
+                            break
+                    
+                    # 매핑되지 않은 새로운 컬럼이라면 기본값 사용
+                    if col_value is None:
+                        col_value = f"[{col_name}_값_없음]"
+                    
+                    # 숫자 값 포맷팅
+                    if isinstance(col_value, (int, float)):
+                        formatted_value = f"{col_value:,}"
+                    elif isinstance(col_value, str) and col_value.replace(',', '').replace('.', '').isdigit():
+                        try:
+                            num_value = int(float(col_value.replace(',', '')))
+                            formatted_value = f"{num_value:,}"
+                        except:
+                            formatted_value = str(col_value)
+                    else:
+                        formatted_value = str(col_value) if col_value is not None else ""
+                    
+                    # [컬럼:컬럼명]을 실제 값으로 치환
+                    processed_template = processed_template.replace(f"[컬럼:{col_name}]", formatted_value)
+                
+                # 2. 시스템 변수 준비 (기존 로직과 동일)
                 variables = {}
                 
-                # 1. 기본 고정 정보 추가
+                # 고정 정보 추가
                 for key, value in fixed_data.items():
                     if isinstance(value, (int, float)):
                         variables[key] = value
                     else:
-                        # 숫자로 변환 시도
                         try:
                             str_val = str(value).replace(',', '').replace('원', '').strip()
                             if str_val and str_val.replace('.', '').replace('-', '').isdigit():
@@ -319,62 +354,54 @@ class EnhancedMessageGenerator:
                         except:
                             variables[key] = str(value) if value else ""
                 
-                # 2. 그룹별 환율 정보 추가 (있는 경우)
+                # 그룹별 환율 정보 추가
                 exchange_info = group_exchange_rates.get(group_id, {})
                 for key, value in exchange_info.items():
                     variables[key] = value
                 
-                # 3. 모든 그룹 정보를 변수로 동적 추가 (스마트 타입 변환)
+                # 그룹 정보를 변수로 추가 (타입 변환 포함)
                 for key, value in group_info.items():
                     if isinstance(value, (int, float)):
                         variables[key] = value
                     elif isinstance(value, list):
                         if key == 'members':
-                            # 멤버 리스트를 문자열로 변환 (이미 group_members_text가 있지만 호환성 유지)
                             variables['group_members_text'] = ', '.join([f"{name}님" for name in value])
                         else:
                             variables[key] = ', '.join(str(item) for item in value)
                     else:
-                        # 문자열 값 처리 - 스마트 타입 감지
                         str_value = str(value) if value is not None else ""
                         
-                        # 숫자로 추정되는 필드명 또는 값인지 검사
+                        # 숫자 필드 스마트 감지
                         is_numeric_field = any(keyword in key.lower() for keyword in 
-                                             ['price', 'fee', 'amount', 'balance', 'cost', 'money', 
-                                              '금액', '비용', '요금', '원', 'rate', 'size', 'count'])
+                                            ['price', 'fee', 'amount', 'balance', 'cost', 'money', 
+                                            '금액', '비용', '요금', '원', 'rate', 'size', 'count'])
                         
-                        # 값 자체가 숫자인지 검사
                         is_numeric_value = False
                         try:
                             clean_value = str_value.replace(',', '').replace('원', '').replace(' ', '').strip()
                             if clean_value and (clean_value.isdigit() or 
-                                              (clean_value.replace('.', '').replace('-', '').isdigit())):
+                                            (clean_value.replace('.', '').replace('-', '').isdigit())):
                                 is_numeric_value = True
                         except:
                             pass
                         
-                        # 숫자로 변환할지 결정
                         if is_numeric_field or is_numeric_value:
                             try:
                                 clean_value = str_value.replace(',', '').replace('원', '').replace(' ', '').strip()
-                                if clean_value:
-                                    variables[key] = int(float(clean_value))
-                                else:
-                                    variables[key] = 0
+                                variables[key] = int(float(clean_value)) if clean_value else 0
                             except (ValueError, TypeError):
                                 variables[key] = 0
                         else:
                             variables[key] = str_value
                 
-                # 4. 특별 계산 변수들
+                # 3. 특별 계산 변수들
                 variables['group_size'] = len(group_info.get('members', []))
                 
-                # 환율 관련 계산
                 current_exchange_fee = variables.get('exchange_fee', 0)
                 current_company_burden = exchange_info.get('company_burden', variables.get('company_burden', 0))
                 variables['additional_fee_per_person'] = current_exchange_fee + current_company_burden
                 
-                # 추가 금액 텍스트 생성 (0이 아닌 경우에만)
+                # 추가 금액 텍스트
                 additional_amount = variables.get('additional_amount', 0)
                 try:
                     additional_amount = int(additional_amount) if additional_amount else 0
@@ -383,11 +410,10 @@ class EnhancedMessageGenerator:
                 
                 if additional_amount != 0:
                     variables['additional_amount_text'] = f" - 추가금액 {additional_amount:,}원"
-                    has_additional_amount = True
                 else:
                     variables['additional_amount_text'] = ""
                 
-                # 기본값 설정 (누락될 수 있는 변수들)
+                # 기본값 설정
                 default_vars = {
                     'product_price': 0,
                     'deposit': 0,
@@ -402,24 +428,23 @@ class EnhancedMessageGenerator:
                     if var_name not in variables:
                         variables[var_name] = default_value
                 
-                # 5. 템플릿 변수 검증 및 안전한 포맷팅
+                # 4. 템플릿 변수 검증 및 메시지 생성
                 try:
-                    # 템플릿에서 사용된 변수들 추출
-                    template_vars = set(re.findall(r'\{(\w+)(?::[^}]+)?\}', template))
+                    # 현재 템플릿에서 사용된 변수들 추출 (이미 컬럼 참조는 처리됨)
+                    template_vars = set(re.findall(r'\{(\w+)(?::[^}]+)?\}', processed_template))
                     
-                    # 없는 변수들에 대해 기본값 제공
+                    # 없는 변수들에 기본값 제공
                     for var in template_vars:
                         if var not in variables:
-                            # 변수명으로 타입 추정
                             if any(keyword in var.lower() for keyword in 
-                                  ['price', 'fee', 'amount', 'balance', 'cost', 'money', 'size', 'rate', 'count',
-                                   '금액', '비용', '요금', '원', '개수', '인원']):
+                                ['price', 'fee', 'amount', 'balance', 'cost', 'money', 'size', 'rate', 'count',
+                                '금액', '비용', '요금', '원', '개수', '인원']):
                                 variables[var] = 0
                             else:
                                 variables[var] = ""
                     
-                    # 포맷팅 사용 변수들의 타입 강제 변환
-                    number_format_vars = set(re.findall(r'\{(\w+):[^}]*[,d][^}]*\}', template))
+                    # 숫자 포맷팅 변수들 타입 강제 변환
+                    number_format_vars = set(re.findall(r'\{(\w+):[^}]*[,d][^}]*\}', processed_template))
                     for var_name in number_format_vars:
                         if var_name in variables:
                             try:
@@ -432,8 +457,8 @@ class EnhancedMessageGenerator:
                             except (ValueError, TypeError):
                                 variables[var_name] = 0
                     
-                    # 메시지 생성
-                    message = template.format(**variables)
+                    # 최종 메시지 생성
+                    message = processed_template.format(**variables)
                     
                 except KeyError as e:
                     missing_var = str(e).strip("'")
@@ -442,41 +467,40 @@ class EnhancedMessageGenerator:
                 except ValueError as e:
                     error_msg = str(e)
                     if "Cannot specify" in error_msg or "format" in error_msg.lower():
-                        # 포맷팅 오류 상세 분석
                         problematic_vars = []
                         for var_name, var_value in variables.items():
-                            if f"{{{var_name}:" in template and not isinstance(var_value, (int, float)):
+                            if f"{{{var_name}:" in processed_template and not isinstance(var_value, (int, float)):
                                 problematic_vars.append(f"{var_name} = '{var_value}' (타입: {type(var_value).__name__})")
                         
                         raise ValueError(f"숫자 포맷팅을 문자값에 적용하려 했습니다.\n문제가 있는 변수들: {', '.join(problematic_vars[:3])}")
                     else:
                         raise ValueError(f"변수 값 처리 중 오류: {error_msg}")
-                    
+                        
                 except Exception as e:
-                    raise Exception(f"템플릿 처리 중 예상치 못한 오류: {str(e)}")
+                    raise Exception(f"스마트 템플릿 처리 중 예상치 못한 오류: {str(e)}")
                 
                 # 메시지 저장
                 self.generated_messages[group_id] = {
                     'message': message,
                     'group_info': group_info,
-                    'variables_used': variables
+                    'variables_used': variables,
+                    'column_refs_used': column_refs  # 디버깅용
                 }
                 
-                # 최종 메시지에도 복사
                 self.final_messages[group_id] = message
             
-            # 성공한 메시지가 없으면 중단
             if not self.generated_messages:
-                raise Exception("성공적으로 생성된 메시지가 없습니다. 템플릿과 매핑을 확인해주세요.")
+                raise Exception("성공적으로 생성된 메시지가 없습니다. 템플릿과 데이터를 확인해주세요.")
             
             return {
                 'messages': self.generated_messages,
-                'has_additional_amount': has_additional_amount,
-                'total_count': len(self.generated_messages)
+                'total_count': len(self.generated_messages),
+                'column_refs_found': column_refs
             }
             
         except Exception as e:
-            raise Exception(f"메시지 생성 중 오류: {str(e)}")
+            raise Exception(f"스마트 메시지 생성 중 오류: {str(e)}")
+        
     
     def get_sorted_messages(self):
         """자연 정렬된 메시지 반환"""

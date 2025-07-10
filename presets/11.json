@@ -1,0 +1,32 @@
+{
+  "name": "11",
+  "mapping_data": {
+    "fixed_settings": {
+      "product_name_cell": "D2",
+      "payment_due_cell": "D3",
+      "base_exchange_cell": "F2",
+      "current_exchange_cell": "F3",
+      "header_row": 9
+    },
+    "required_selections": {
+      "team_col_selection": "팀",
+      "sender_group_selection": "문자 발송 그룹",
+      "name_col_selection": "이름 "
+    },
+    "dynamic_mappings": {
+      "번호": "num",
+      "팀": "team",
+      "팀 인원": "team_count",
+      "이름 ": "name",
+      "연락처": "contact",
+      "문자 발송 그룹": "__group",
+      "상품가(항공권 제외 금액)": "_product_price",
+      "두바이 체류 관광비": "_dubai_fee",
+      "코카서스 취소 수수료(20%)": "_cancel_fee",
+      "1인당 환불금": "_refund_person",
+      "환불 인원": "_refund_count",
+      "총 환불금 안내 금액": "_refund_total"
+    }
+  },
+  "created_at": "2025-07-05T08:05:30.646014"
+}

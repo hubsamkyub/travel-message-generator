@@ -463,3 +463,119 @@ def generate_variable_name(header):
     if var_name and var_name[0].isdigit():
         var_name = 'var_' + var_name
     return var_name[:50] if var_name else "unnamed_variable"
+
+def show_smart_template_preview(template, preview_data, excel_columns):
+    """
+    스마트 템플릿 미리보기 (새로운 [컬럼:컬럼명] 문법 지원)
+    """
+    st.markdown("##### 🔍 실시간 미리보기")
+
+    if not preview_data:
+        st.warning("미리보기를 생성할 데이터가 없습니다.")
+        st.text_area("Preview Area", "미리보기 생성 불가", height=450, disabled=True, label_visibility="collapsed")
+        return
+
+    try:
+        # 1. 컬럼 참조 처리: [컬럼:컬럼명] → 실제 값으로 치환
+        processed_template = template
+        import re
+        
+        # [컬럼:컬럼명] 패턴 찾아서 치환
+        column_pattern = r'\[컬럼:([^\]]+)\]'
+        column_matches = re.findall(column_pattern, template)
+        
+        for col_name in column_matches:
+            if col_name in excel_columns and col_name in preview_data:
+                # 실제 데이터 값으로 치환
+                actual_value = preview_data[col_name]
+                
+                # 숫자인 경우 포맷팅
+                if isinstance(actual_value, (int, float)):
+                    formatted_value = f"{actual_value:,}"
+                elif isinstance(actual_value, str) and actual_value.replace(',', '').replace('.', '').isdigit():
+                    try:
+                        num_value = int(float(actual_value.replace(',', '')))
+                        formatted_value = f"{num_value:,}"
+                    except:
+                        formatted_value = str(actual_value)
+                else:
+                    formatted_value = str(actual_value) if actual_value else ""
+                
+                # 템플릿에서 치환
+                processed_template = processed_template.replace(f"[컬럼:{col_name}]", formatted_value)
+            else:
+                # 존재하지 않는 컬럼은 오류 표시
+                processed_template = processed_template.replace(f"[컬럼:{col_name}]", f"❌[{col_name}]")
+
+        # 2. 기존 {변수명} 패턴 처리
+        # 시스템 변수들을 preview_data에 추가
+        enhanced_preview_data = preview_data.copy()
+        
+        # 자동 계산 변수들 추가
+        if 'name' in preview_data:
+            enhanced_preview_data['group_members_text'] = f"{preview_data['name']}님 외 1명"
+        else:
+            enhanced_preview_data['group_members_text'] = "홍길동님 외 1명"
+        
+        enhanced_preview_data['group_size'] = 2
+        enhanced_preview_data['additional_fee_per_person'] = 70000
+
+        # 템플릿에 사용된 변수들 찾기
+        template_vars = set(re.findall(r'\{(\w+)(?::[^}]+)?\}', processed_template))
+        
+        # 없는 변수들을 위한 기본값 추가
+        for var in template_vars:
+            if var not in enhanced_preview_data:
+                enhanced_preview_data[var] = f"[{var}]"
+
+        # 숫자 포맷팅이 필요한 변수들 처리
+        number_format_vars = set(re.findall(r'\{(\w+):[^}]*[,d][^}]*\}', processed_template))
+        for var_name in number_format_vars:
+            if var_name in enhanced_preview_data:
+                try:
+                    if isinstance(enhanced_preview_data[var_name], str):
+                        cleaned_val = re.sub(r'[^\d.-]', '', enhanced_preview_data[var_name])
+                        enhanced_preview_data[var_name] = int(float(cleaned_val)) if cleaned_val else 0
+                    elif not isinstance(enhanced_preview_data[var_name], (int, float)):
+                        enhanced_preview_data[var_name] = 0
+                except (ValueError, TypeError):
+                    enhanced_preview_data[var_name] = 0
+
+        # 3. 최종 미리보기 생성
+        preview_message = processed_template.format(**enhanced_preview_data)
+
+        # 4. 미리보기 표시
+        st.text_area(
+            label="Preview Area",
+            value=preview_message,
+            height=450,
+            disabled=True,
+            label_visibility="collapsed",
+            help="엑셀의 첫 번째 데이터를 기반으로 생성된 실시간 미리보기입니다."
+        )
+
+        # 5. 추가 정보 표시
+        with st.expander("🔍 미리보기 상세 정보", expanded=False):
+            col_info1, col_info2 = st.columns(2)
+            
+            with col_info1:
+                st.markdown("**📊 사용된 엑셀 컬럼:**")
+                for col_name in column_matches:
+                    status = "✅" if col_name in excel_columns else "❌"
+                    value = preview_data.get(col_name, "값 없음")
+                    st.write(f"{status} `{col_name}`: {value}")
+            
+            with col_info2:
+                st.markdown("**🏷️ 사용된 시스템 변수:**")
+                for var in template_vars:
+                    value = enhanced_preview_data.get(var, "정의되지 않음")
+                    st.write(f"• `{var}`: {value}")
+
+    except KeyError as e:
+        missing_var = str(e).strip("'")
+        st.error(f"❌ 템플릿 오류: 정의되지 않은 변수 {{{missing_var}}}가 사용되었습니다.")
+        st.text_area("Error Preview", f"변수 오류: {missing_var}", height=450, disabled=True, label_visibility="collapsed")
+        
+    except Exception as e:
+        st.error(f"❌ 미리보기 생성 중 오류: {str(e)}")
+        st.text_area("Error Preview", f"오류 발생: {str(e)}", height=450, disabled=True, label_visibility="collapsed")
