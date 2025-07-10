@@ -509,7 +509,7 @@ class EnhancedMessageGenerator:
             return {
                 'messages': self.generated_messages,
                 'total_count': len(self.generated_messages),
-                'column_refs_found': column_refs + [col for col, fmt in column_format_refs]
+                'column_refs_found': list(set(column_refs + [col for col, fmt in column_format_refs]))
             }
             
         except Exception as e:
