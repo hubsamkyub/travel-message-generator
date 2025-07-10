@@ -545,13 +545,7 @@ def show_template_step():
         # 선택 가능한 코드 표시
         col_code, col_clear = st.columns([4, 1])
         with col_code:
-            st.text_area(
-                "복사용 코드", 
-                value=st.session_state.insert_ready_text,
-                height=50,
-                disabled=True,
-                label_visibility="collapsed"
-            )
+            st.code(st.session_state.insert_ready_text, language="text")
         with col_clear:
             st.write("")  # 여백
             if st.button("❌ 닫기", use_container_width=True):
