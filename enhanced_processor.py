@@ -285,9 +285,9 @@ class EnhancedMessageGenerator:
         """자연 정렬을 위한 키 함수"""
         return [int(part) if part.isdigit() else part.lower() 
                 for part in re.split(r'(\d+)', str(text))]
-            
+
     def generate_messages(self, template, group_data, fixed_data, group_exchange_rates=None):
-        """스마트 템플릿을 지원하는 메시지 생성 함수"""
+        """스마트 템플릿을 지원하는 메시지 생성 함수 (완전 수정 버전)"""
         if not group_data:
             raise ValueError("그룹 데이터가 없습니다.")
         
@@ -300,56 +300,61 @@ class EnhancedMessageGenerator:
             
             # 템플릿에서 사용된 컬럼 참조들 미리 추출
             import re
-            column_refs = re.findall(r'\[컬럼:([^\]]+)\]', template)
+            column_refs = re.findall(r'\[컬럼:([^\]:]+)\]', template)  # 일반 컬럼 참조: [컬럼:컬럼명]
+            column_format_refs = re.findall(r'\[컬럼:([^\]:]+):([^\]]+)\]', template)  # 포맷 포함 컬럼 참조: [컬럼:컬럼명:,]
             
             for group_id, group_info in group_data.items():
-                # 1. 스마트 템플릿 전처리: [컬럼:컬럼명] → {컬럼명}으로 변환
+                # 1. 스마트 템플릿 전처리: [컬럼:컬럼명] 및 [컬럼:컬럼명:포맷] 처리
                 processed_template = template
                 
+                # 일반 컬럼 참조 처리: [컬럼:컬럼명]
                 for col_name in column_refs:
-                    # 컬럼 매핑에서 해당 컬럼의 변수명 찾기
-                    col_value = None
+                    col_value = self._find_column_value(col_name, group_info)
                     
-                    # 1차: 매핑된 변수명으로 직접 찾기
-                    if col_name in group_info:
-                        col_value = group_info[col_name]
-                    else:
-                        # 2차: 역방향 매핑으로 찾기 (엑셀 컬럼명 → 변수명)
-                        # column_mappings에서 col_name이 키로 있는지 확인
-                        mapped_var_name = None
-                        for excel_col, var_name in self.column_mappings.items() if hasattr(self, 'column_mappings') else {}:
-                            if excel_col == col_name:
-                                mapped_var_name = var_name
-                                break
-                        
-                        # 매핑된 변수명이 있으면 그 값 사용
-                        if mapped_var_name and mapped_var_name in group_info:
-                            col_value = group_info[mapped_var_name]
-                        else:
-                            # 3차: 비슷한 이름으로 찾기
-                            for key, value in group_info.items():
-                                if col_name.lower() in key.lower() or key.lower() in col_name.lower():
-                                    col_value = value
-                                    break
-                    
-                    # 찾지 못한 경우 오류 표시
-                    if col_value is None:
-                        col_value = f"❌[{col_name}]"
-                    
-                    # 숫자 값 포맷팅
+                    # 기본 텍스트 포맷팅
                     if isinstance(col_value, (int, float)):
-                        formatted_value = f"{col_value:,}"
-                    elif isinstance(col_value, str) and col_value.replace(',', '').replace('.', '').isdigit():
-                        try:
-                            num_value = int(float(col_value.replace(',', '')))
-                            formatted_value = f"{num_value:,}"
-                        except:
-                            formatted_value = str(col_value)
+                        formatted_value = str(col_value)
+                    elif isinstance(col_value, str) and col_value.replace(',', '').replace('.', '').replace('-', '').isdigit():
+                        formatted_value = col_value
                     else:
                         formatted_value = str(col_value) if col_value is not None else ""
                     
+                    # 찾지 못한 경우 오류 표시
+                    if col_value is None:
+                        formatted_value = f"❌[{col_name}]"
+                    
                     # [컬럼:컬럼명]을 실제 값으로 치환
                     processed_template = processed_template.replace(f"[컬럼:{col_name}]", formatted_value)
+                
+                # 포맷 포함 컬럼 참조 처리: [컬럼:컬럼명:포맷]
+                for col_name, format_type in column_format_refs:
+                    col_value = self._find_column_value(col_name, group_info)
+                    
+                    # 숫자 포맷팅 적용
+                    if format_type == ',' and col_value is not None:
+                        try:
+                            if isinstance(col_value, (int, float)):
+                                formatted_value = f"{col_value:,}"
+                            elif isinstance(col_value, str):
+                                clean_value = col_value.replace(',', '').replace('원', '').strip()
+                                if clean_value and clean_value.replace('.', '').replace('-', '').isdigit():
+                                    num_value = int(float(clean_value))
+                                    formatted_value = f"{num_value:,}"
+                                else:
+                                    formatted_value = str(col_value)
+                            else:
+                                formatted_value = str(col_value)
+                        except (ValueError, TypeError):
+                            formatted_value = str(col_value) if col_value is not None else ""
+                    else:
+                        formatted_value = str(col_value) if col_value is not None else ""
+                    
+                    # 찾지 못한 경우 오류 표시
+                    if col_value is None:
+                        formatted_value = f"❌[{col_name}]"
+                    
+                    # [컬럼:컬럼명:포맷]을 실제 값으로 치환
+                    processed_template = processed_template.replace(f"[컬럼:{col_name}:{format_type}]", formatted_value)
                 
                 # 2. 시스템 변수 준비 (기존 로직과 동일)
                 variables = {}
@@ -498,7 +503,8 @@ class EnhancedMessageGenerator:
                     'message': message,
                     'group_info': group_info,
                     'variables_used': variables,
-                    'column_refs_used': column_refs  # 디버깅용
+                    'column_refs_used': column_refs,  # 디버깅용
+                    'column_format_refs_used': column_format_refs  # 디버깅용
                 }
                 
                 self.final_messages[group_id] = message
