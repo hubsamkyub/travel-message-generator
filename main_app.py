@@ -227,12 +227,8 @@ def show_file_upload_step():
             st.markdown("**📥 샘플 파일 다운로드**")
             st.markdown("`create_sample_data.py`를 실행하여 샘플 엑셀 파일을 생성할 수 있습니다.")
 
-
 def show_mapping_step():
     st.header("2️⃣ 매핑 설정")
-
-    # PresetManager 인스턴스 생성
-    preset_manager = PresetManager()
 
     if 'uploaded_file' not in st.session_state:
         create_info_card("파일이 필요합니다", "먼저 엑셀 파일을 업로드해주세요.", "⚠️", "warning")
@@ -241,185 +237,162 @@ def show_mapping_step():
             st.rerun()
         return
 
-    # --- 탭 UI 구성 ---
-    tab1, tab2, tab3 = st.tabs(["⚙️ 기본 설정", "🔗 동적 컬럼 매핑", "💾 프리셋 관리"])
+    # 고정 정보 기본값 설정
+    if 'product_name_cell' not in st.session_state:
+        st.session_state.product_name_cell = "D2"
+        st.session_state.payment_due_cell = "D3"
+        st.session_state.base_exchange_cell = "F2"
+        st.session_state.current_exchange_cell = "F3"
+        st.session_state.header_row = 9
 
-    # 탭 1: 고정 정보 및 테이블 설정
+    # 간단한 2단계 구성
+    tab1, tab2 = st.tabs(["📍 기본 설정", "👥 필수 컬럼 매핑"])
+
+    # 탭 1: 고정 정보 설정 (간소화)
     with tab1:
-        st.markdown("### 📍 고정 정보 셀 주소 설정")
+        st.markdown("### 📋 고정 정보 셀 주소")
+        st.info("💡 엑셀에서 상품명, 날짜, 환율 등이 저장된 셀 주소를 입력하세요.")
+        
         col1, col2 = st.columns(2)
         with col1:
-            product_name_cell = st.text_input("🏷️ 상품명", value=st.session_state.get("product_name_cell", "D2"))
-            payment_due_cell = st.text_input("📅 잔금완납일", value=st.session_state.get("payment_due_cell", "D3"))
+            st.session_state.product_name_cell = st.text_input("🏷️ 상품명 셀", value=st.session_state.product_name_cell, help="예: D2")
+            st.session_state.payment_due_cell = st.text_input("📅 잔금완납일 셀", value=st.session_state.payment_due_cell, help="예: D3")
         with col2:
-            base_exchange_cell = st.text_input("💱 기준환율", value=st.session_state.get("base_exchange_cell", "F2"))
-            current_exchange_cell = st.text_input("📈 현재환율", value=st.session_state.get("current_exchange_cell", "F3"))
+            st.session_state.base_exchange_cell = st.text_input("💱 기준환율 셀", value=st.session_state.base_exchange_cell, help="예: F2")
+            st.session_state.current_exchange_cell = st.text_input("📈 현재환율 셀", value=st.session_state.current_exchange_cell, help="예: F3")
 
-        st.markdown("### 📊 테이블 구조 설정")
-        header_row = st.number_input(
-            "📋 헤더 행 번호 (컬럼명이 있는 행)", min_value=1, max_value=50, value=st.session_state.get("header_row", 9)
+        st.markdown("### 📊 테이블 시작점")
+        st.session_state.header_row = st.number_input(
+            "헤더 행 번호 (컬럼명이 있는 행)", 
+            min_value=1, max_value=50, 
+            value=st.session_state.header_row,
+            help="엑셀에서 '팀', '그룹', '이름' 등의 컬럼명이 있는 행 번호"
         )
-        # UI 상태 유지를 위해 세션에 값 저장
-        st.session_state.product_name_cell = product_name_cell
-        st.session_state.payment_due_cell = payment_due_cell
-        st.session_state.base_exchange_cell = base_exchange_cell
-        st.session_state.current_exchange_cell = current_exchange_cell
-        st.session_state.header_row = header_row
 
-    # 탭 2: 동적 컬럼 매핑
+    # 탭 2: 필수 컬럼 매핑 (대폭 간소화)
     with tab2:
+        st.markdown("### 👥 필수 컬럼 선택")
+        st.info("💡 메시지 그룹 생성을 위해 필요한 3개 컬럼을 선택해주세요.")
+        
         try:
+            header_row = st.session_state.header_row
             df_table = pd.read_excel(st.session_state.uploaded_file, sheet_name=st.session_state.selected_sheet, header=header_row - 1).dropna(how='all', axis=1)
-            available_columns = ["선택 안 함"] + df_table.columns.tolist()
+            available_columns = ["👆 선택하세요"] + df_table.columns.tolist()
 
-            # 파일이 바뀌면 매핑을 다시 하도록 상태 초기화
-            if 'current_file_id' not in st.session_state or st.session_state.current_file_id != st.session_state.uploaded_file.file_id:
-                st.session_state.current_file_id = st.session_state.uploaded_file.file_id
-                if 'auto_mapping_done' in st.session_state:
-                    del st.session_state.auto_mapping_done
-
-            # 자동 매핑 로직
-            if 'auto_mapping_done' not in st.session_state:
-                default_preset = preset_manager.load_preset('default')
-                preset_mappings = default_preset.get('mapping_data', {}).get('dynamic_mappings', {}) if default_preset else {}
-                preset_required = default_preset.get('mapping_data', {}).get('required_selections', {}) if default_preset else {}
-
-                def find_best_match(columns, keywords, preset_val):
-                    if preset_val and preset_val in columns: return preset_val
+            # 자동 매핑 시도 (처음 한 번만)
+            if 'auto_mapping_simple_done' not in st.session_state:
+                def find_column(keywords):
                     for keyword in keywords:
-                        for col in columns:
-                            if keyword in str(col): return col
-                    return "선택 안 함"
+                        for col in df_table.columns:
+                            if keyword in str(col):
+                                return col
+                    return "👆 선택하세요"
 
-                st.session_state.team_col_selection = find_best_match(df_table.columns, ['팀'], preset_required.get('team_col'))
-                st.session_state.sender_group_selection = find_best_match(df_table.columns, ['그룹', '발송'], preset_required.get('sender_group_col'))
-                st.session_state.name_col_selection = find_best_match(df_table.columns, ['이름', '성명'], preset_required.get('name_col'))
+                st.session_state.team_col_simple = find_column(['팀'])
+                st.session_state.group_col_simple = find_column(['그룹', '발송'])
+                st.session_state.name_col_simple = find_column(['이름', '성명'])
+                st.session_state.auto_mapping_simple_done = True
 
-                st.session_state.dynamic_mappings = {}
-                for col in df_table.columns:
-                    st.session_state.dynamic_mappings[col] = preset_mappings.get(col, generate_variable_name(str(col)))
+            # 3개 필수 컬럼 선택
+            st.markdown("#### 🔴 필수 선택")
+            col1, col2, col3 = st.columns(3)
+            
+            team_col = col1.selectbox(
+                "팀 컬럼", available_columns, 
+                index=available_columns.index(st.session_state.get("team_col_simple", "👆 선택하세요")) if st.session_state.get("team_col_simple", "👆 선택하세요") in available_columns else 0
+            )
+            group_col = col2.selectbox(
+                "발송그룹 컬럼", available_columns,
+                index=available_columns.index(st.session_state.get("group_col_simple", "👆 선택하세요")) if st.session_state.get("group_col_simple", "👆 선택하세요") in available_columns else 0
+            )
+            name_col = col3.selectbox(
+                "이름 컬럼", available_columns,
+                index=available_columns.index(st.session_state.get("name_col_simple", "👆 선택하세요")) if st.session_state.get("name_col_simple", "👆 선택하세요") in available_columns else 0
+            )
+
+            # 세션에 저장
+            st.session_state.team_col_simple = team_col
+            st.session_state.group_col_simple = group_col
+            st.session_state.name_col_simple = name_col
+            
+            # 필수 컬럼 검증
+            selected_columns = [team_col, group_col, name_col]
+            missing_selections = [label for label, col in zip(['팀', '발송그룹', '이름'], selected_columns) if col == "👆 선택하세요"]
+            
+            if missing_selections:
+                st.error(f"⚠️ 다음 항목을 선택해주세요: {', '.join(missing_selections)}")
+                mapping_ready = False
+            else:
+                st.success("✅ 필수 컬럼 매핑이 완료되었습니다!")
+                mapping_ready = True
+
+            # 데이터 미리보기
+            if mapping_ready:
+                st.markdown("#### 📋 매핑 결과 미리보기")
+                preview_df = df_table[[team_col, group_col, name_col]].head(5)
+                preview_df.columns = ['팀', '발송그룹', '이름']
+                st.dataframe(preview_df, use_container_width=True)
                 
-                st.session_state.auto_mapping_done = True
-                if default_preset: st.toast("⭐ 기본 프리셋을 적용하여 변수명을 복원했습니다.")
+                # 그룹 통계
+                col_stat1, col_stat2, col_stat3 = st.columns(3)
+                total_rows = len(df_table)
+                unique_teams = df_table[team_col].nunique()
+                unique_groups = df_table.groupby([team_col, group_col]).ngroups
+                
+                col_stat1.metric("전체 인원", f"{total_rows}명")
+                col_stat2.metric("팀 수", f"{unique_teams}개")
+                col_stat3.metric("예상 그룹", f"{unique_groups}개")
 
-            st.markdown("#### 🔴 필수 변수 지정")
-            required_cols = st.columns(3)
-            team_col = required_cols[0].selectbox("팀(team_name) 컬럼", available_columns, index=available_columns.index(st.session_state.get("team_col_selection", "선택 안 함")))
-            sender_group_col = required_cols[1].selectbox("그룹(sender_group) 컬럼", available_columns, index=available_columns.index(st.session_state.get("sender_group_selection", "선택 안 함")))
-            name_col = required_cols[2].selectbox("이름(name) 컬럼", available_columns, index=available_columns.index(st.session_state.get("name_col_selection", "선택 안 함")))
-
-            st.session_state.team_col_selection = team_col
-            st.session_state.sender_group_selection = sender_group_col
-            st.session_state.name_col_selection = name_col
-            
-            missing_required = [label for label, col in zip(['팀', '그룹', '이름'], [team_col, sender_group_col, name_col]) if col == "선택 안 함"]
-            if missing_required:
-                st.error(f"**필수 변수 미지정:** `{', '.join(missing_required)}`에 해당하는 컬럼을 선택해주세요.")
-
-            st.markdown("---")
-            st.markdown("#### 🔵 선택 변수 지정 (템플릿에 사용할 추가 정보)")
-            
-            optional_columns = [col for col in df_table.columns if col not in [team_col, sender_group_col, name_col]]
-            
-            if st.button("🔄 선택 변수명 자동 생성"):
-                st.session_state.dynamic_mappings.update({col: generate_variable_name(str(col)) for col in optional_columns})
-
-            ui_cols = st.columns(2)
-            ui_cols[0].markdown("**엑셀 컬럼**")
-            ui_cols[1].markdown("**프로그램 변수명**")
-
-            for col_header in optional_columns:
-                c1, c2 = st.columns(2)
-                c1.markdown(f"`{col_header}`")
-                st.session_state.dynamic_mappings[col_header] = c2.text_input(f"var_for_{col_header}", value=st.session_state.dynamic_mappings.get(col_header, ""), label_visibility="collapsed")
-            
         except Exception as e:
-            st.error(f"테이블 데이터를 읽는 중 오류가 발생했습니다: {e}")
-            missing_required = ['팀']
+            st.error(f"❌ 테이블 데이터 읽기 오류: {e}")
+            mapping_ready = False
 
-    # 탭3: 프리셋 관리
-    with tab3:
-        st.markdown("### 💾 매핑 프리셋 관리")
-        presets = preset_manager.get_preset_list()
-        all_preset_options = {p['name']: p['id'] for p in presets}
+    # 최종 매핑 데이터 생성
+    if 'mapping_ready' in locals() and mapping_ready:
+        # 필수 매핑만 포함
+        column_mappings = {
+            team_col: 'team_name',
+            group_col: 'sender_group', 
+            name_col: 'name'
+        }
         
-        st.markdown("#### ⭐ 기본 프리셋 설정")
-        default_preset_data = preset_manager.load_preset('default')
-        st.info(f"현재 기본 프리셋: **{default_preset_data['name'] if default_preset_data else '없음'}** (파일 업로드 시 자동 적용)")
+        # 나머지 컬럼들도 자동으로 포함 (스마트 템플릿에서 사용 가능하도록)
+        for col in df_table.columns:
+            if col not in column_mappings:
+                # 간단한 변수명 생성
+                var_name = generate_variable_name(str(col))
+                column_mappings[col] = var_name
 
-        set_default_preset_name = st.selectbox("기본으로 사용할 프리셋 선택", list(all_preset_options.keys()))
-        if st.button("⭐ 기본으로 설정", disabled=not set_default_preset_name):
-            preset_id = all_preset_options[set_default_preset_name]
-            preset_data = preset_manager.load_preset(preset_id)
-            if preset_data:
-                preset_manager.save_preset('default', preset_data)
-                st.success(f"'{set_default_preset_name}'을(를) 기본 프리셋으로 설정했습니다.")
-                st.rerun()
+        st.session_state.mapping_data = {
+            "fixed_data_mapping": {
+                "product_name": st.session_state.product_name_cell,
+                "payment_due_date": st.session_state.payment_due_cell,
+                "base_exchange_rate": st.session_state.base_exchange_cell,
+                "current_exchange_rate": st.session_state.current_exchange_cell
+            },
+            "table_settings": {
+                "header_row": st.session_state.header_row
+            },
+            "column_mappings": column_mappings
+        }
+    else:
+        mapping_ready = False
 
-        st.markdown("---")
-        st.markdown("#### 📂 프리셋 목록")
-        preset_to_load = st.selectbox("프리셋 불러오기", ["선택 안 함"] + list(all_preset_options.keys()))
-        if st.button("🔄 프리셋 적용하기", disabled=(preset_to_load == "선택 안 함")):
-            preset_id = all_preset_options[preset_to_load]
-            preset_data = preset_manager.load_preset(preset_id)
-            if preset_data:
-                mapping = preset_data.get('mapping_data', {})
-                st.session_state.update(mapping.get('fixed_settings', {}))
-                st.session_state.update(mapping.get('required_selections', {}))
-                st.session_state.dynamic_mappings = mapping.get('dynamic_mappings', {})
-                st.session_state.auto_mapping_done = True
-                st.success(f"'{preset_to_load}' 프리셋을 적용했습니다.")
-                st.rerun()
-        
-        st.markdown("---")
-        st.markdown("#### 현재 매핑 설정 저장하기")
-        new_preset_name = st.text_input("저장할 프리셋 이름")
-        if st.button("💾 현재 설정 저장", disabled=not new_preset_name):
-            current_mapping_data = {
-                "fixed_settings": { "product_name_cell": product_name_cell, "payment_due_cell": payment_due_cell, "base_exchange_cell": base_exchange_cell, "current_exchange_cell": current_exchange_cell, "header_row": header_row },
-                "required_selections": { "team_col_selection": team_col, "sender_group_selection": sender_group_col, "name_col_selection": name_col },
-                "dynamic_mappings": {k: v for k, v in st.session_state.get('dynamic_mappings', {}).items() if k in df_table.columns}
-            }
-            preset_manager.save_preset(new_preset_name, {"name": new_preset_name, "mapping_data": current_mapping_data})
-            st.success(f"'{new_preset_name}' 프리셋을 저장했습니다.")
-            st.rerun()
-
-    # --- 최종 매핑 정보 구성 및 네비게이션 ---
-    final_column_mappings = {}
-    if 'team_col' in locals() and team_col != "선택 안 함": final_column_mappings[team_col] = 'team_name'
-    if 'sender_group_col' in locals() and sender_group_col != "선택 안 함": final_column_mappings[sender_group_col] = 'sender_group'
-    if 'name_col' in locals() and name_col != "선택 안 함": final_column_mappings[name_col] = 'name'
-    
-    if 'optional_columns' in locals():
-        for col, var_name in st.session_state.get('dynamic_mappings', {}).items():
-            if col in optional_columns and var_name:
-                final_column_mappings[col] = var_name
-    
-    st.session_state.mapping_data = {
-        "fixed_data_mapping": { "product_name": product_name_cell, "payment_due_date": payment_due_cell, "base_exchange_rate": base_exchange_cell, "current_exchange_rate": current_exchange_cell },
-        "table_settings": { "header_row": header_row },
-        "column_mappings": final_column_mappings
-    }
-    
+    # 네비게이션
     st.markdown("---")
     nav_cols = st.columns([1, 1])
-    with nav_cols[0]:
-        if st.button("⬅️ 이전 단계 (파일 업로드)", use_container_width=True):
-            st.session_state.current_step = 1
-            del st.session_state.auto_mapping_done
-            st.rerun()
-    with nav_cols[1]:
-        is_disabled = 'missing_required' in locals() and bool(missing_required)
-        if st.button("➡️ 다음 단계 (템플릿 설정)", type="primary", use_container_width=True, disabled=is_disabled):
-            # 문제 3 해결: 성공적인 매핑 설정을 'default' 프리셋으로 저장
-            preset_manager.save_preset('default', {"name": "Last Used Setting", "mapping_data": st.session_state.mapping_data})
-            
-            st.session_state.current_step = 3
-            st.success("✅ 매핑 설정이 완료되었습니다. 다음 단계로 이동합니다.")
-            st.rerun()
-
-
-
+    
+    if nav_cols[0].button("⬅️ 이전 단계 (파일 업로드)", use_container_width=True):
+        st.session_state.current_step = 1
+        if 'auto_mapping_simple_done' in st.session_state:
+            del st.session_state.auto_mapping_simple_done
+        st.rerun()
+    
+    if nav_cols[1].button("➡️ 다음 단계 (템플릿 설정)", type="primary", use_container_width=True, disabled=not mapping_ready):
+        st.session_state.current_step = 3
+        st.success("✅ 간단 매핑이 완료되었습니다! 이제 스마트 템플릿을 설정해보세요.")
+        st.rerun()
+        
 def preview_fixed_data(fixed_mapping):
     """고정 정보 미리보기"""
     try:
@@ -467,6 +440,7 @@ def get_column_index(columns, search_term):
             return i
     return 0
 
+
 def show_template_step():
     st.header("3️⃣ 템플릿 설정")
 
@@ -503,60 +477,82 @@ def show_template_step():
         st.error(f"엑셀 데이터 로드 실패: {e}")
         return
 
-    # --- 2. 사이드바: 스마트 컬럼 삽입 도구 ---
-    with st.sidebar:
-        st.markdown("---")
-        st.markdown("### 📊 엑셀 컬럼 삽입")
-        st.info("💡 아래 컬럼을 클릭하면 템플릿에 자동으로 삽입됩니다!")
-        
-        # 검색 기능
-        search_term = st.text_input("🔍 컬럼 검색", placeholder="컬럼명 입력...")
-        filtered_columns = [col for col in excel_columns if search_term.lower() in str(col).lower()] if search_term else excel_columns
-        
-        st.markdown("#### 📋 엑셀 컬럼 목록")
-        for col in filtered_columns:
-            preview_val = str(preview_data.get(col, ""))[:20] + ("..." if len(str(preview_data.get(col, ""))) > 20 else "")
-            if st.button(f"📌 {col}", key=f"insert_{col}", help=f"예시값: {preview_val}", use_container_width=True):
-                # JavaScript를 통해 템플릿에 컬럼 참조 삽입
-                st.session_state.insert_column = col
-                st.rerun()
-        
-        st.markdown("---")
-        st.markdown("#### 🏢 고정 정보")
-        fixed_vars = ["product_name", "payment_due_date", "base_exchange_rate", "current_exchange_rate"]
-        for var in fixed_vars:
-            if st.button(f"🏷️ {var}", key=f"insert_fixed_{var}", use_container_width=True):
-                st.session_state.insert_fixed = var
-                st.rerun()
-        
-        st.markdown("---")
-        st.markdown("#### ⚡ 자동 계산값")
-        auto_vars = ["group_members_text", "group_size", "additional_fee_per_person"]
-        for var in auto_vars:
-            if st.button(f"🔢 {var}", key=f"insert_auto_{var}", use_container_width=True):
-                st.session_state.insert_auto = var
-                st.rerun()
-
-    # --- 3. 메인 편집기 및 미리보기 ---
-    col_editor, col_preview = st.columns([1, 1], gap="large")
-    
-    with col_editor:
-        st.markdown("##### ✍️ 메시지 템플릿 편집기")
-        
-        # 기본 템플릿 초기화
-        if 'smart_template' not in st.session_state:
-            default_template = """[여행처럼]
+    # --- 2. 파일별 템플릿 자동 로드 ---
+    file_template_key = f"template_{st.session_state.uploaded_file.name}_{st.session_state.selected_sheet}"
+    if 'smart_template' not in st.session_state:
+        # 저장된 템플릿이 있는지 확인
+        saved_template = template_manager.load_file_template(file_template_key)
+        if saved_template:
+            st.session_state.smart_template = saved_template
+            st.success("✅ 이전에 저장한 템플릿을 자동으로 불러왔습니다!")
+        else:
+            # 기본 템플릿
+            st.session_state.smart_template = """[여행처럼]
 {product_name} 잔금 안내
 
 안녕하세요, 여행처럼입니다.
 {product_name} 예약 건 관련하여 잔금 결제를 요청드립니다.
 
 👥 대상: {group_members_text}
-💰 잔금: [컬럼:잔금액]원
+💰 잔금: [컬럼:잔금]원
 📅 완납일: {payment_due_date}
 
 감사합니다."""
-            st.session_state.smart_template = default_template
+
+    # --- 3. 사이드바: 컬럼 삽입 도구 (상단 배치) ---
+    with st.sidebar:
+        st.markdown("### 📊 엑셀 컬럼 삽입")
+        st.info("💡 컬럼을 클릭하면 템플릿에 삽입됩니다!")
+        
+        # 검색 기능
+        search_term = st.text_input("🔍 컬럼 검색", placeholder="컬럼명 입력...")
+        filtered_columns = [col for col in excel_columns if search_term.lower() in str(col).lower()] if search_term else excel_columns
+        
+        # 컬럼 목록을 2열로 배치
+        for i in range(0, len(filtered_columns), 2):
+            cols = st.columns(2)
+            for j, col in enumerate(filtered_columns[i:i+2]):
+                preview_val = str(preview_data.get(col, ""))[:10] + ("..." if len(str(preview_data.get(col, ""))) > 10 else "")
+                if cols[j].button(f"📌 {col}", key=f"insert_{col}", help=f"예시: {preview_val}", use_container_width=True):
+                    st.session_state.insert_column = col
+                    st.rerun()
+        
+        st.markdown("---")
+        
+        # 고정 정보 삽입
+        st.markdown("#### 🏷️ 고정 정보")
+        fixed_vars = [
+            ("product_name", "상품명"),
+            ("payment_due_date", "잔금완납일"), 
+            ("base_exchange_rate", "기준환율"),
+            ("current_exchange_rate", "현재환율")
+        ]
+        
+        for var_code, var_name in fixed_vars:
+            if st.button(f"🏷️ {var_name}", key=f"insert_fixed_{var_code}", use_container_width=True):
+                st.session_state.insert_fixed = var_code
+                st.rerun()
+        
+        st.markdown("---")
+        
+        # 자동 계산값
+        st.markdown("#### ⚡ 자동 계산")
+        auto_vars = [
+            ("group_members_text", "그룹 멤버"),
+            ("group_size", "인원 수"),
+            ("additional_fee_per_person", "1인 추가요금")
+        ]
+        
+        for var_code, var_name in auto_vars:
+            if st.button(f"🔢 {var_name}", key=f"insert_auto_{var_code}", use_container_width=True):
+                st.session_state.insert_auto = var_code
+                st.rerun()
+
+    # --- 4. 메인 편집기 및 미리보기 ---
+    col_editor, col_preview = st.columns([1, 1], gap="large")
+    
+    with col_editor:
+        st.markdown("##### ✍️ 스마트 템플릿 편집기")
         
         # 삽입 요청 처리
         current_template = st.session_state.smart_template
@@ -583,44 +579,60 @@ def show_template_step():
         template = st.text_area(
             "Smart Template Editor", 
             value=st.session_state.smart_template, 
-            height=450, 
+            height=400, 
             key="smart_template_editor", 
             label_visibility="collapsed",
-            help="[컬럼:컬럼명] 형태로 엑셀 컬럼을 직접 참조하거나, {변수명} 형태로 고정/계산 변수를 사용하세요."
+            help="[컬럼:컬럼명] 또는 {변수명} 형태로 작성하세요."
         )
         st.session_state.smart_template = template
+        
+        # 자동 저장 버튼
+        col_save, col_stats = st.columns([1, 2])
+        if col_save.button("💾 자동저장", help="현재 파일에 연결하여 템플릿을 저장합니다"):
+            template_manager.save_file_template(file_template_key, template)
+            st.success("✅ 템플릿이 저장되었습니다!")
         
         # 템플릿 통계
         char_count = len(template)
         sms_type = "LMS" if char_count > 90 else "SMS"
-        sms_count_str = f"{sms_type} 1건"
-        if char_count > 2000: sms_count_str = f"LMS {((char_count - 1) // 2000) + 1}건"
-        
-        col_stat1, col_stat2, col_stat3 = st.columns(3)
-        col_stat1.metric("글자 수", f"{char_count}자")
-        col_stat2.metric("예상 요금", sms_count_str)
-        
-        # 템플릿 검증
-        validation_result = validate_smart_template(template, excel_columns, fixed_vars + auto_vars)
-        if validation_result['errors']:
-            col_stat3.metric("⚠️ 오류", len(validation_result['errors']))
-            st.error("**템플릿 오류:**")
-            for error in validation_result['errors']:
-                st.write(f"• {error}")
-        else:
-            col_stat3.metric("✅ 상태", "정상")
+        col_stats.metric("📊 상태", f"{char_count}자 | {sms_type}")
     
     with col_preview:
         show_smart_template_preview(template, preview_data, excel_columns)
 
-    # --- 4. 템플릿 라이브러리 관리 ---
-    with st.expander("🗂️ 템플릿 라이브러리", expanded=False):
-        tab_load, tab_save = st.tabs(["📂 불러오기", "💾 저장하기"])
+    # --- 5. 템플릿 파일 관리 ---
+    with st.expander("📁 템플릿 파일 관리", expanded=False):
+        tab_upload, tab_library = st.tabs(["📤 파일 업로드", "🗂️ 내 라이브러리"])
         
-        with tab_load:
-            templates = template_manager.get_template_list()
-            if templates:
-                template_options = {t['name']: t['id'] for t in templates}
+        with tab_upload:
+            st.markdown("##### 📄 템플릿 파일 업로드")
+            uploaded_template_file = st.file_uploader(
+                "텍스트 파일(.txt)을 업로드하세요", type=['txt'],
+                help="기존에 작성한 템플릿 파일을 불러올 수 있습니다"
+            )
+            
+            if uploaded_template_file is not None:
+                try:
+                    uploaded_content = uploaded_template_file.getvalue().decode("utf-8")
+                    
+                    col_apply, col_preview_file = st.columns(2)
+                    if col_apply.button("✅ 템플릿 적용", type="primary"):
+                        st.session_state.smart_template = uploaded_content
+                        st.success("템플릿이 적용되었습니다!")
+                        st.rerun()
+                    
+                    # 업로드된 파일 미리보기
+                    st.text_area("파일 내용 미리보기", uploaded_content, height=200, disabled=True)
+                    
+                except Exception as e:
+                    st.error(f"파일 읽기 오류: {e}")
+        
+        with tab_library:
+            st.markdown("##### 🗃️ 저장된 템플릿 관리")
+            user_templates = template_manager.get_user_template_list()
+            
+            if user_templates:
+                template_options = {t['name']: t['id'] for t in user_templates}
                 selected_template_name = st.selectbox("저장된 템플릿", ["선택 안 함"] + list(template_options.keys()))
                 
                 col_load, col_delete = st.columns(2)
@@ -639,66 +651,81 @@ def show_template_step():
                         st.rerun()
             else:
                 st.info("저장된 템플릿이 없습니다.")
-        
-        with tab_save:
-            new_template_name = st.text_input("템플릿 이름")
-            template_description = st.text_input("설명 (선택사항)")
             
-            if st.button("💾 현재 템플릿 저장", disabled=not new_template_name):
+            st.markdown("---")
+            new_template_name = st.text_input("새 템플릿으로 저장")
+            if st.button("💾 라이브러리에 저장", disabled=not new_template_name):
                 try:
-                    template_id = template_manager.create_template_from_content(
+                    template_id = template_manager.create_user_template(
                         name=new_template_name,
-                        content=st.session_state.smart_template,
-                        description=template_description or f"Smart template saved at {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                        content=st.session_state.smart_template
                     )
-                    st.success(f"'{new_template_name}' 템플릿을 저장했습니다.")
+                    st.success(f"'{new_template_name}' 템플릿을 라이브러리에 저장했습니다.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"템플릿 저장 실패: {e}")
 
-    # --- 5. 도움말 ---
-    with st.expander("💡 스마트 템플릿 사용법", expanded=False):
-        st.markdown("""
-        **📋 새로운 컬럼 참조 방법:**
-        - `[컬럼:상품가]` → 엑셀의 "상품가" 컬럼 값
-        - `[컬럼:연락처]` → 엑셀의 "연락처" 컬럼 값
-        
-        **🏷️ 고정 정보 변수:**
-        - `{product_name}` → 상품명
-        - `{payment_due_date}` → 잔금완납일
-        - `{base_exchange_rate}`, `{current_exchange_rate}` → 환율 정보
-        
-        **⚡ 자동 계산 변수:**
-        - `{group_members_text}` → "홍길동님, 김철수님" 형태의 멤버 목록
-        - `{group_size}` → 그룹 인원 수
-        - `{additional_fee_per_person}` → 1인당 추가 요금
-        
-        **💡 팁:**
-        - 사이드바에서 컬럼명을 클릭하면 자동으로 삽입됩니다
-        - 실시간 미리보기로 결과를 바로 확인할 수 있습니다
-        """)
-
     # --- 6. 네비게이션 ---
     st.markdown("---")
+    
+    # 템플릿 검증
+    validation_result = validate_smart_template(template, excel_columns, ["product_name", "payment_due_date", "base_exchange_rate", "current_exchange_rate", "group_members_text", "group_size", "additional_fee_per_person"])
+    
     nav_cols = st.columns([1, 1])
     if nav_cols[0].button("⬅️ 이전 단계 (매핑 설정)", use_container_width=True):
         st.session_state.current_step = 2
         st.rerun()
     
-    # 템플릿 검증 후 다음 단계 이동
     can_proceed = not validation_result.get('errors', [])
     if nav_cols[1].button("➡️ 다음 단계 (메시지 생성)", type="primary", use_container_width=True, disabled=not can_proceed):
-        # 스마트 템플릿을 기존 template 세션에 저장 (하위 호환성)
+        # 자동저장 후 다음 단계
+        template_manager.save_file_template(file_template_key, template)
         st.session_state.template = st.session_state.smart_template
         st.session_state.current_step = 4
-        st.success("✅ 스마트 템플릿 설정이 완료되었습니다!")
+        st.success("✅ 스마트 템플릿이 저장되고 다음 단계로 이동합니다!")
         st.rerun()
+    
+    # 오류가 있을 때만 표시
+    if validation_result.get('errors'):
+        st.error("**⚠️ 템플릿 오류:**")
+        for error in validation_result['errors']:
+            st.write(f"• {error}")
+
+    # --- 7. 도움말 (하단 배치) ---
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("### 💡 도움말")
+        
+        with st.expander("📝 스마트 템플릿 문법"):
+            st.markdown("""
+            **엑셀 컬럼 참조:**
+            - `[컬럼:상품가]` → 엑셀의 "상품가" 컬럼 값
+            - `[컬럼:연락처]` → 엑셀의 "연락처" 컬럼 값
+            
+            **고정 정보:**
+            - `{product_name}` → 상품명
+            - `{payment_due_date}` → 잔금완납일
+            
+            **자동 계산:**
+            - `{group_members_text}` → "홍길동님, 김철수님"
+            - `{group_size}` → 그룹 인원 수
+            """)
+        
+        with st.expander("🚨 문제 해결"):
+            st.markdown("""
+            **"존재하지 않는 컬럼" 오류:**
+            - 엑셀에 실제로 있는 컬럼명을 사용하세요
+            - 사이드바에서 컬럼을 클릭하여 정확히 삽입하세요
+            
+            **포맷팅 오류:**
+            - 숫자 컬럼에는 `{변수:,}` 포맷 사용 가능
+            - 문자 컬럼에는 포맷팅 사용 금지
+            """)
 
 
 def validate_smart_template(template, excel_columns, system_variables):
-    """스마트 템플릿 검증"""
+    """스마트 템플릿 검증 (간소화)"""
     errors = []
-    warnings = []
     
     # 컬럼 참조 검증
     import re
@@ -707,20 +734,9 @@ def validate_smart_template(template, excel_columns, system_variables):
         if col_ref not in excel_columns:
             errors.append(f"존재하지 않는 컬럼: '{col_ref}'")
     
-    # 시스템 변수 검증
-    system_vars = re.findall(r'\{([^}]+)\}', template)
-    for var in system_vars:
-        var_name = var.split(':')[0]  # 포맷팅 제거
-        if var_name not in system_variables:
-            warnings.append(f"정의되지 않은 변수: '{var_name}'")
-    
-    return {
-        'errors': errors,
-        'warnings': warnings,
-        'column_refs': column_refs,
-        'system_vars': system_vars
-    }
-    
+    return {'errors': errors}
+
+
 def show_message_generation_step():
     st.header("4️⃣ 메시지 생성")
     
@@ -751,7 +767,7 @@ def show_message_generation_step():
         st.rerun()
 
 def process_data_and_generate_messages():
-    """데이터 처리 및 메시지 생성 (향상된 버전)"""
+    """데이터 처리 및 스마트 메시지 생성 (개선된 버전)"""
     
     try:
         # 향상된 프로세서 초기화
@@ -782,18 +798,23 @@ def process_data_and_generate_messages():
         status_text.text("📊 테이블 데이터 로드 완료...")
         progress_bar.progress(40)
         
-        # 3. 그룹 데이터 생성
+        # 3. 그룹 데이터 생성 (컬럼 매핑 정보 전달)
+        column_mappings = st.session_state.mapping_data["column_mappings"]
         group_data = data_processor.process_group_data_dynamic(
             customer_df,
-            st.session_state.mapping_data["column_mappings"]
+            column_mappings
         )
         st.session_state.group_data = group_data
 
         status_text.text(f"👥 {len(group_data)}개 그룹 생성 완료...")
         progress_bar.progress(60)
         
-        # 4. 메시지 생성
-        template = st.session_state.template
+        # 4. 스마트 메시지 생성 (컬럼 매핑 정보 전달)
+        template = st.session_state.get('smart_template', st.session_state.get('template', ''))
+        
+        # message_generator에 컬럼 매핑 정보 설정
+        message_generator.column_mappings = column_mappings
+        message_generator.excel_columns = customer_df.columns.tolist()
         
         result = message_generator.generate_messages(
             template, 
@@ -803,16 +824,17 @@ def process_data_and_generate_messages():
         
         st.session_state.generated_messages = result['messages']
         
-        status_text.text("✨ 메시지 생성 완료!")
+        status_text.text("✨ 스마트 메시지 생성 완료!")
         progress_bar.progress(100)
         
         # 완료 메시지
         success_info = f"""
-        🎉 **메시지 생성 완료!**
+        🎉 **스마트 메시지 생성 완료!**
         
         📊 **처리 결과:**
         - 📁 처리된 그룹 수: **{len(group_data)}개**
         - 📝 생성된 메시지 수: **{result['total_count']}개**
+        - 🔗 사용된 컬럼 참조: **{len(result.get('column_refs_found', []))}개**
         """
         
         st.success(success_info)
@@ -821,9 +843,8 @@ def process_data_and_generate_messages():
         status_text.empty()
 
     except Exception as e:
-        show_error_details(e, "데이터 처리 및 메시지 생성 중")
+        show_error_details(e, "스마트 데이터 처리 및 메시지 생성 중")
         raise
-
 
 def show_results_step():
     st.header("5️⃣ 결과 확인 및 활용")

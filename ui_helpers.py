@@ -554,22 +554,7 @@ def show_smart_template_preview(template, preview_data, excel_columns):
             help="엑셀의 첫 번째 데이터를 기반으로 생성된 실시간 미리보기입니다."
         )
 
-        # 5. 추가 정보 표시
-        with st.expander("🔍 미리보기 상세 정보", expanded=False):
-            col_info1, col_info2 = st.columns(2)
-            
-            with col_info1:
-                st.markdown("**📊 사용된 엑셀 컬럼:**")
-                for col_name in column_matches:
-                    status = "✅" if col_name in excel_columns else "❌"
-                    value = preview_data.get(col_name, "값 없음")
-                    st.write(f"{status} `{col_name}`: {value}")
-            
-            with col_info2:
-                st.markdown("**🏷️ 사용된 시스템 변수:**")
-                for var in template_vars:
-                    value = enhanced_preview_data.get(var, "정의되지 않음")
-                    st.write(f"• `{var}`: {value}")
+        # 미리보기 상세 정보는 제거됨 (사용자 요청)
 
     except KeyError as e:
         missing_var = str(e).strip("'")

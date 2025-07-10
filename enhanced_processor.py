@@ -286,7 +286,6 @@ class EnhancedMessageGenerator:
         return [int(part) if part.isdigit() else part.lower() 
                 for part in re.split(r'(\d+)', str(text))]
     
-
     def generate_messages(self, template, group_data, fixed_data, group_exchange_rates=None):
         """스마트 템플릿을 지원하는 메시지 생성 함수"""
         if not group_data:
@@ -308,19 +307,34 @@ class EnhancedMessageGenerator:
                 processed_template = template
                 
                 for col_name in column_refs:
-                    # 그룹 정보에서 해당 컬럼 값 찾기
+                    # 컬럼 매핑에서 해당 컬럼의 변수명 찾기
                     col_value = None
                     
-                    # 그룹 정보에서 직접 찾기 (이미 매핑된 데이터에서)
-                    for key, value in group_info.items():
-                        # 원본 엑셀 컬럼명과 매치되는지 확인
-                        if key == col_name or key.endswith(f"_{col_name}") or col_name in key:
-                            col_value = value
-                            break
+                    # 1차: 매핑된 변수명으로 직접 찾기
+                    if col_name in group_info:
+                        col_value = group_info[col_name]
+                    else:
+                        # 2차: 역방향 매핑으로 찾기 (엑셀 컬럼명 → 변수명)
+                        # column_mappings에서 col_name이 키로 있는지 확인
+                        mapped_var_name = None
+                        for excel_col, var_name in self.column_mappings.items() if hasattr(self, 'column_mappings') else {}:
+                            if excel_col == col_name:
+                                mapped_var_name = var_name
+                                break
+                        
+                        # 매핑된 변수명이 있으면 그 값 사용
+                        if mapped_var_name and mapped_var_name in group_info:
+                            col_value = group_info[mapped_var_name]
+                        else:
+                            # 3차: 비슷한 이름으로 찾기
+                            for key, value in group_info.items():
+                                if col_name.lower() in key.lower() or key.lower() in col_name.lower():
+                                    col_value = value
+                                    break
                     
-                    # 매핑되지 않은 새로운 컬럼이라면 기본값 사용
+                    # 찾지 못한 경우 오류 표시
                     if col_value is None:
-                        col_value = f"[{col_name}_값_없음]"
+                        col_value = f"❌[{col_name}]"
                     
                     # 숫자 값 포맷팅
                     if isinstance(col_value, (int, float)):
