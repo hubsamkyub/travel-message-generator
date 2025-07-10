@@ -463,15 +463,23 @@ class EnhancedMessageGenerator:
                                 variables[var] = ""
                     
                     # 숫자 포맷팅 변수들 타입 강제 변환
-                    number_format_vars = set(re.findall(r'\{(\w+):[^}]*[,d][^}]*\}', processed_template))
+                    number_format_vars = set(re.findall(r'\{(\w+):[^}]*,.*?\}', processed_template))  # 정규식 수정
                     for var_name in number_format_vars:
                         if var_name in variables:
                             try:
                                 current_value = variables[var_name]
                                 if isinstance(current_value, str):
-                                    clean_value = current_value.replace(',', '').replace('원', '').replace(' ', '').strip()
-                                    variables[var_name] = int(float(clean_value)) if clean_value else 0
+                                    # 더 강력한 숫자 변환 로직
+                                    clean_value = current_value.replace(',', '').replace('원', '').replace(' ', '').replace('₩', '').strip()
+                                    # 음수 처리도 포함
+                                    if clean_value and (clean_value.replace('-', '').replace('.', '').isdigit()):
+                                        variables[var_name] = int(float(clean_value))
+                                    else:
+                                        variables[var_name] = 0
+                                elif current_value is None:
+                                    variables[var_name] = 0
                                 elif not isinstance(current_value, (int, float)):
+                                    # 숫자가 아닌 다른 타입도 0으로 변환
                                     variables[var_name] = 0
                             except (ValueError, TypeError):
                                 variables[var_name] = 0
