@@ -440,7 +440,6 @@ def get_column_index(columns, search_term):
             return i
     return 0
 
-
 def show_template_step():
     st.header("3️⃣ 템플릿 설정")
 
@@ -494,32 +493,65 @@ def show_template_step():
 {product_name} 예약 건 관련하여 잔금 결제를 요청드립니다.
 
 👥 대상: {group_members_text}
-💰 잔금: [컬럼:잔금]원
+💰 잔금: [컬럼:잔금:,]원
 📅 완납일: {payment_due_date}
 
+계좌: [컬럼:계좌번호]
 감사합니다."""
 
-    # --- 3. 사이드바: 컬럼 삽입 도구 (상단 배치) ---
+    # --- 3. 사이드바: 컬럼 복사 도구 (상단 배치) ---
     with st.sidebar:
-        st.markdown("### 📊 엑셀 컬럼 삽입")
-        st.info("💡 컬럼을 클릭하면 템플릿에 삽입됩니다!")
+        st.markdown("### 📊 엑셀 컬럼 복사")
+        st.info("💡 버튼을 클릭하면 복사용 코드가 나타납니다!")
+        
+        # 복사된 텍스트 표시 영역
+        if 'copy_text' not in st.session_state:
+            st.session_state.copy_text = ""
+        
+        if st.session_state.copy_text:
+            st.success("📋 복사해서 사용하세요:")
+            st.code(st.session_state.copy_text, language="text")
+            if st.button("❌ 복사창 닫기"):
+                st.session_state.copy_text = ""
+                st.rerun()
         
         # 검색 기능
         search_term = st.text_input("🔍 컬럼 검색", placeholder="컬럼명 입력...")
         filtered_columns = [col for col in excel_columns if search_term.lower() in str(col).lower()] if search_term else excel_columns
         
-        # 컬럼 목록을 2열로 배치
-        for i in range(0, len(filtered_columns), 2):
-            cols = st.columns(2)
-            for j, col in enumerate(filtered_columns[i:i+2]):
-                preview_val = str(preview_data.get(col, ""))[:10] + ("..." if len(str(preview_data.get(col, ""))) > 10 else "")
-                if cols[j].button(f"📌 {col}", key=f"insert_{col}", help=f"예시: {preview_val}", use_container_width=True):
-                    st.session_state.insert_column = col
+        # 컬럼 목록을 1열로 배치 (복사 방식)
+        st.markdown("#### 📋 엑셀 컬럼 목록")
+        for col in filtered_columns:
+            preview_val = str(preview_data.get(col, ""))[:15] + ("..." if len(str(preview_data.get(col, ""))) > 15 else "")
+            
+            # 컬럼별 옵션
+            col_container = st.container()
+            with col_container:
+                # 숫자인지 문자인지 판단
+                sample_value = preview_data.get(col, "")
+                is_numeric = False
+                try:
+                    if isinstance(sample_value, (int, float)):
+                        is_numeric = True
+                    elif isinstance(sample_value, str) and sample_value.replace(',', '').replace('.', '').replace('-', '').isdigit():
+                        is_numeric = True
+                except:
+                    pass
+                
+                # 기본 텍스트 버튼
+                if st.button(f"📄 {col} (텍스트)", key=f"copy_text_{col}", help=f"예시: {preview_val}", use_container_width=True):
+                    st.session_state.copy_text = f"[컬럼:{col}]"
                     st.rerun()
+                
+                # 숫자 포맷 버튼 (숫자로 추정되는 경우만)
+                if is_numeric:
+                    if st.button(f"🔢 {col} (숫자)", key=f"copy_num_{col}", help=f"1,000 형태로 표시", use_container_width=True):
+                        st.session_state.copy_text = f"[컬럼:{col}:,]"
+                        st.rerun()
         
         st.markdown("---")
         
-        # 고정 정보 삽입
+        # 고정 정보 복사
         st.markdown("#### 🏷️ 고정 정보")
         fixed_vars = [
             ("product_name", "상품명"),
@@ -529,13 +561,13 @@ def show_template_step():
         ]
         
         for var_code, var_name in fixed_vars:
-            if st.button(f"🏷️ {var_name}", key=f"insert_fixed_{var_code}", use_container_width=True):
-                st.session_state.insert_fixed = var_code
+            if st.button(f"🏷️ {var_name}", key=f"copy_fixed_{var_code}", use_container_width=True):
+                st.session_state.copy_text = f"{{{var_code}}}"
                 st.rerun()
         
         st.markdown("---")
         
-        # 자동 계산값
+        # 자동 계산값 복사
         st.markdown("#### ⚡ 자동 계산")
         auto_vars = [
             ("group_members_text", "그룹 멤버"),
@@ -544,8 +576,8 @@ def show_template_step():
         ]
         
         for var_code, var_name in auto_vars:
-            if st.button(f"🔢 {var_name}", key=f"insert_auto_{var_code}", use_container_width=True):
-                st.session_state.insert_auto = var_code
+            if st.button(f"🔢 {var_name}", key=f"copy_auto_{var_code}", use_container_width=True):
+                st.session_state.copy_text = f"{{{var_code}}}"
                 st.rerun()
 
     # --- 4. 메인 편집기 및 미리보기 ---
@@ -554,37 +586,32 @@ def show_template_step():
     with col_editor:
         st.markdown("##### ✍️ 스마트 템플릿 편집기")
         
-        # 삽입 요청 처리
-        current_template = st.session_state.smart_template
-        if 'insert_column' in st.session_state:
-            col_name = st.session_state.insert_column
-            current_template += f"[컬럼:{col_name}]"
-            st.session_state.smart_template = current_template
-            del st.session_state.insert_column
-            st.rerun()
-        elif 'insert_fixed' in st.session_state:
-            var_name = st.session_state.insert_fixed
-            current_template += f"{{{var_name}}}"
-            st.session_state.smart_template = current_template
-            del st.session_state.insert_fixed
-            st.rerun()
-        elif 'insert_auto' in st.session_state:
-            var_name = st.session_state.insert_auto
-            current_template += f"{{{var_name}}}"
-            st.session_state.smart_template = current_template
-            del st.session_state.insert_auto
-            st.rerun()
-        
-        # 템플릿 편집기
+        # 템플릿 편집기 (자동 삽입 로직 제거)
         template = st.text_area(
             "Smart Template Editor", 
             value=st.session_state.smart_template, 
             height=400, 
             key="smart_template_editor", 
             label_visibility="collapsed",
-            help="[컬럼:컬럼명] 또는 {변수명} 형태로 작성하세요."
+            help="사이드바에서 복사한 코드를 원하는 위치에 붙여넣으세요."
         )
         st.session_state.smart_template = template
+        
+        # 문법 도움말
+        with st.expander("📖 스마트 템플릿 문법", expanded=False):
+            st.markdown("""
+            **📋 엑셀 컬럼 참조:**
+            - `[컬럼:상품가]` → 엑셀 "상품가" 컬럼의 텍스트 값
+            - `[컬럼:상품가:,]` → 엑셀 "상품가" 컬럼의 숫자 값 (1,000 형태)
+            
+            **🏷️ 고정 정보:**
+            - `{product_name}` → 상품명
+            - `{payment_due_date}` → 잔금완납일
+            
+            **⚡ 자동 계산:**
+            - `{group_members_text}` → "홍길동님, 김철수님"
+            - `{group_size}` → 그룹 인원 수 (숫자)
+            """)
         
         # 자동 저장 버튼
         col_save, col_stats = st.columns([1, 2])
@@ -698,44 +725,55 @@ def show_template_step():
         
         with st.expander("📝 스마트 템플릿 문법"):
             st.markdown("""
-            **엑셀 컬럼 참조:**
-            - `[컬럼:상품가]` → 엑셀의 "상품가" 컬럼 값
+            **📋 엑셀 컬럼 참조:**
+            - `[컬럼:상품가]` → 엑셀의 "상품가" 컬럼 값 (텍스트)
+            - `[컬럼:상품가:,]` → 엑셀의 "상품가" 컬럼 값 (1,000 형태 숫자)
             - `[컬럼:연락처]` → 엑셀의 "연락처" 컬럼 값
             
-            **고정 정보:**
+            **🏷️ 고정 정보:**
             - `{product_name}` → 상품명
             - `{payment_due_date}` → 잔금완납일
+            - `{base_exchange_rate:,}` → 기준환율 (숫자 포맷)
             
-            **자동 계산:**
+            **⚡ 자동 계산:**
             - `{group_members_text}` → "홍길동님, 김철수님"
             - `{group_size}` → 그룹 인원 수
+            - `{additional_fee_per_person:,}` → 1인당 추가요금 (숫자 포맷)
             """)
         
         with st.expander("🚨 문제 해결"):
             st.markdown("""
             **"존재하지 않는 컬럼" 오류:**
             - 엑셀에 실제로 있는 컬럼명을 사용하세요
-            - 사이드바에서 컬럼을 클릭하여 정확히 삽입하세요
+            - 사이드바에서 컬럼을 복사하여 정확히 입력하세요
             
-            **포맷팅 오류:**
-            - 숫자 컬럼에는 `{변수:,}` 포맷 사용 가능
-            - 문자 컬럼에는 포맷팅 사용 금지
+            **숫자 포맷팅 오류:**
+            - 숫자 컬럼: `[컬럼:금액:,]` 또는 `{변수:,}` 사용
+            - 문자 컬럼: `[컬럼:이름]` 또는 `{변수}` 사용 (포맷 금지)
+            
+            **복사 사용법:**
+            - 사이드바에서 버튼 클릭 → 복사창에 코드 표시
+            - 코드를 복사해서 원하는 위치에 붙여넣기
             """)
 
-
 def validate_smart_template(template, excel_columns, system_variables):
-    """스마트 템플릿 검증 (간소화)"""
+    """스마트 템플릿 검증 (숫자 포맷 지원)"""
     errors = []
     
-    # 컬럼 참조 검증
+    # 일반 컬럼 참조 검증
     import re
-    column_refs = re.findall(r'\[컬럼:([^\]]+)\]', template)
+    column_refs = re.findall(r'\[컬럼:([^\]:]+)\]', template)
     for col_ref in column_refs:
         if col_ref not in excel_columns:
             errors.append(f"존재하지 않는 컬럼: '{col_ref}'")
     
+    # 숫자 포맷 컬럼 참조 검증
+    column_format_refs = re.findall(r'\[컬럼:([^\]:]+):[^\]]+\]', template)
+    for col_ref in column_format_refs:
+        if col_ref not in excel_columns:
+            errors.append(f"존재하지 않는 컬럼 (포맷 포함): '{col_ref}'")
+    
     return {'errors': errors}
-
 
 def show_message_generation_step():
     st.header("4️⃣ 메시지 생성")

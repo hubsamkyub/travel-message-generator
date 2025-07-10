@@ -93,13 +93,16 @@ class TemplateManager:
             return False
     
     def create_user_template(self, name: str, content: str, description: str = "") -> str:
-        """사용자 템플릿 생성"""
+        """사용자 템플릿 생성 (숫자 포맷 지원)"""
         import re
         
-        # 변수 추출
-        column_refs = re.findall(r'\[컬럼:([^\]]+)\]', content)
+        # 변수 추출 (새로운 문법 지원)
+        column_refs = re.findall(r'\[컬럼:([^\]:]+)\]', content)  # 일반 컬럼 참조
+        column_format_refs = re.findall(r'\[컬럼:([^\]:]+):([^\]]+)\]', content)  # 포맷 포함 컬럼 참조
         system_vars = re.findall(r'\{(\w+)(?::[^}]+)?\}', content)
-        all_variables = list(set(column_refs + system_vars))
+        
+        # 모든 변수 합치기
+        all_variables = list(set(column_refs + [col for col, fmt in column_format_refs] + system_vars))
         
         # 고유 ID 생성
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -111,6 +114,7 @@ class TemplateManager:
             "content": content,
             "variables": all_variables,
             "column_refs": column_refs,
+            "column_format_refs": column_format_refs,
             "system_vars": system_vars,
             "category": "user",
             "created_at": datetime.now().isoformat()
@@ -244,13 +248,16 @@ class TemplateManager:
             elif 'name' not in template_data:
                 template_data['name'] = f"가져온 템플릿 {datetime.now().strftime('%Y%m%d_%H%M%S')}"
             
-            # 변수 재추출
+            # 변수 재추출 (새로운 문법 지원)
             import re
             content = template_data['content']
-            column_refs = re.findall(r'\[컬럼:([^\]]+)\]', content)
+            column_refs = re.findall(r'\[컬럼:([^\]:]+)\]', content)
+            column_format_refs = re.findall(r'\[컬럼:([^\]:]+):([^\]]+)\]', content)
             system_vars = re.findall(r'\{(\w+)(?::[^}]+)?\}', content)
-            template_data['variables'] = list(set(column_refs + system_vars))
+            
+            template_data['variables'] = list(set(column_refs + [col for col, fmt in column_format_refs] + system_vars))
             template_data['column_refs'] = column_refs
+            template_data['column_format_refs'] = column_format_refs
             template_data['system_vars'] = system_vars
             
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -280,7 +287,7 @@ class TemplateManager:
         return results
     
     def validate_template(self, content: str, excel_columns: List[str] = None) -> Dict:
-        """스마트 템플릿 유효성 검사"""
+        """스마트 템플릿 유효성 검사 (숫자 포맷 지원)"""
         import re
         
         result = {
@@ -288,20 +295,25 @@ class TemplateManager:
             'errors': [],
             'warnings': [],
             'column_refs': [],
+            'column_format_refs': [],
             'system_vars': [],
             'stats': {}
         }
         
         try:
             # 컬럼 참조 및 시스템 변수 추출
-            result['column_refs'] = re.findall(r'\[컬럼:([^\]]+)\]', content)
+            result['column_refs'] = re.findall(r'\[컬럼:([^\]:]+)\]', content)  # 일반 참조
+            result['column_format_refs'] = re.findall(r'\[컬럼:([^\]:]+):[^\]]+\]', content)  # 포맷 참조
             result['system_vars'] = re.findall(r'\{(\w+)(?::[^}]+)?\}', content)
+            
+            # 모든 컬럼 참조 합치기
+            all_column_refs = result['column_refs'] + [col for col, fmt in re.findall(r'\[컬럼:([^\]:]+):([^\]]+)\]', content)]
             
             # 기본 통계
             result['stats'] = {
                 'character_count': len(content),
                 'line_count': len(content.split('\n')),
-                'column_refs_count': len(result['column_refs']),
+                'column_refs_count': len(set(all_column_refs)),
                 'system_vars_count': len(result['system_vars'])
             }
             
@@ -315,7 +327,7 @@ class TemplateManager:
             
             # 엑셀 컬럼 검증 (컬럼 정보가 제공된 경우)
             if excel_columns:
-                for col_ref in result['column_refs']:
+                for col_ref in set(all_column_refs):
                     if col_ref not in excel_columns:
                         result['errors'].append(f"존재하지 않는 컬럼: '{col_ref}'")
                         result['is_valid'] = False

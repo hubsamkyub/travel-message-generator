@@ -285,7 +285,7 @@ class EnhancedMessageGenerator:
         """자연 정렬을 위한 키 함수"""
         return [int(part) if part.isdigit() else part.lower() 
                 for part in re.split(r'(\d+)', str(text))]
-    
+            
     def generate_messages(self, template, group_data, fixed_data, group_exchange_rates=None):
         """스마트 템플릿을 지원하는 메시지 생성 함수"""
         if not group_data:
@@ -509,13 +509,32 @@ class EnhancedMessageGenerator:
             return {
                 'messages': self.generated_messages,
                 'total_count': len(self.generated_messages),
-                'column_refs_found': column_refs
+                'column_refs_found': column_refs + [col for col, fmt in column_format_refs]
             }
             
         except Exception as e:
             raise Exception(f"스마트 메시지 생성 중 오류: {str(e)}")
+
+    def _find_column_value(self, col_name, group_info):
+        """그룹 정보에서 컬럼값 찾기 (개선된 매칭)"""
+        # 1차: 직접 매칭
+        if col_name in group_info:
+            return group_info[col_name]
         
-    
+        # 2차: 매핑 테이블 활용
+        if hasattr(self, 'column_mappings'):
+            for excel_col, var_name in self.column_mappings.items():
+                if excel_col == col_name and var_name in group_info:
+                    return group_info[var_name]
+        
+        # 3차: 유사한 이름으로 찾기
+        for key, value in group_info.items():
+            if col_name.lower() in key.lower() or key.lower() in col_name.lower():
+                return value
+        
+        # 찾지 못한 경우
+        return None
+
     def get_sorted_messages(self):
         """자연 정렬된 메시지 반환"""
         if not self.generated_messages:

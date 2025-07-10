@@ -507,8 +507,34 @@ def show_smart_template_preview(template, preview_data, excel_columns):
                 # 존재하지 않는 컬럼은 오류 표시
                 processed_template = processed_template.replace(f"[컬럼:{col_name}]", f"❌[{col_name}]")
 
-        # 2. 기존 {변수명} 패턴 처리
-        # 시스템 변수들을 preview_data에 추가
+        # 2. 컬럼 참조에 숫자 포맷팅 처리 추가: [컬럼:컬럼명:,] 형태
+        # [컬럼:컬럼명:,] 패턴도 처리
+        column_format_pattern = r'\[컬럼:([^\]:]+):([^\]]+)\]'
+        column_format_matches = re.findall(column_format_pattern, template)
+        
+        for col_name, format_type in column_format_matches:
+            if col_name in excel_columns and col_name in preview_data:
+                actual_value = preview_data[col_name]
+                
+                # 숫자 포맷팅 적용
+                if format_type == ',' and isinstance(actual_value, (int, float)):
+                    formatted_value = f"{actual_value:,}"
+                elif format_type == ',' and isinstance(actual_value, str):
+                    try:
+                        num_value = int(float(actual_value.replace(',', '')))
+                        formatted_value = f"{num_value:,}"
+                    except:
+                        formatted_value = str(actual_value)
+                else:
+                    formatted_value = str(actual_value) if actual_value else ""
+                
+                # 템플릿에서 치환
+                processed_template = processed_template.replace(f"[컬럼:{col_name}:{format_type}]", formatted_value)
+            else:
+                # 존재하지 않는 컬럼은 오류 표시
+                processed_template = processed_template.replace(f"[컬럼:{col_name}:{format_type}]", f"❌[{col_name}]")
+
+        # 3. 기존 {변수명} 패턴 처리 (안전한 타입 변환)
         enhanced_preview_data = preview_data.copy()
         
         # 자동 계산 변수들 추가
@@ -528,21 +554,28 @@ def show_smart_template_preview(template, preview_data, excel_columns):
             if var not in enhanced_preview_data:
                 enhanced_preview_data[var] = f"[{var}]"
 
-        # 숫자 포맷팅이 필요한 변수들 처리
+        # 숫자 포맷팅이 필요한 변수들 안전 처리
         number_format_vars = set(re.findall(r'\{(\w+):[^}]*[,d][^}]*\}', processed_template))
         for var_name in number_format_vars:
             if var_name in enhanced_preview_data:
                 try:
-                    if isinstance(enhanced_preview_data[var_name], str):
-                        cleaned_val = re.sub(r'[^\d.-]', '', enhanced_preview_data[var_name])
-                        enhanced_preview_data[var_name] = int(float(cleaned_val)) if cleaned_val else 0
-                    elif not isinstance(enhanced_preview_data[var_name], (int, float)):
+                    current_value = enhanced_preview_data[var_name]
+                    # 안전한 숫자 변환
+                    if isinstance(current_value, str):
+                        # 특수 문자 제거 후 숫자만 추출
+                        cleaned_val = re.sub(r'[^\d.-]', '', str(current_value))
+                        enhanced_preview_data[var_name] = int(float(cleaned_val)) if cleaned_val and cleaned_val.replace('.', '').replace('-', '').isdigit() else 0
+                    elif not isinstance(current_value, (int, float)):
                         enhanced_preview_data[var_name] = 0
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, AttributeError):
                     enhanced_preview_data[var_name] = 0
 
-        # 3. 최종 미리보기 생성
-        preview_message = processed_template.format(**enhanced_preview_data)
+        # 4. 최종 미리보기 생성 (안전한 포맷팅)
+        try:
+            preview_message = processed_template.format(**enhanced_preview_data)
+        except (ValueError, KeyError) as e:
+            # 포맷팅 오류 시 안전한 대체
+            preview_message = f"⚠️ 미리보기 생성 오류: {str(e)}\n\n원본 템플릿:\n{processed_template}"
 
         # 4. 미리보기 표시
         st.text_area(
