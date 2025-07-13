@@ -57,7 +57,7 @@ class EnhancedDataProcessor:
         fixed_data = {}
         for key, cell_addr in fixed_mapping.items():
             value = self.get_cell_value(df_raw, cell_addr)
-            if key in ['base_exchange_rate', 'current_exchange_rate', 'exchange_rate_diff', 'company_burden']:
+            if key in ['base_exchange_rate', 'current_exchange_rate', 'exchange_rate_diff', 'company_burden', 'exchange_burden']:
                 try:
                     clean_value = str(value).replace(',', '').replace('원', '').replace(' ', '').strip()
                     fixed_data[key] = int(float(clean_value)) if clean_value and clean_value.replace('.', '').replace('-', '').isdigit() else 0
@@ -109,28 +109,14 @@ class EnhancedDataProcessor:
                     'sender_group': str(sender_group),
                     'sender': str(representative[name_col]),
                     'members': [str(name) for name in members_list],
-                    'group_size': len(members_list),
-                    'group_members_text': ', '.join([f"{name}님" for name in members_list]),
                     'excel_order': group_order[group_key]
                 }
 
-                # [핵심 수정] 모든 컬럼 값을 2가지 방식으로 저장
-                for excel_col, var_name in column_mappings.items():
+                # 모든 컬럼 값을 엑셀 컬럼명 그대로 저장
+                for excel_col in customer_df.columns:
                     if excel_col in representative.index:
                         value = representative[excel_col]
-                        
-                        # 1. 엑셀 컬럼명 그대로 저장: [컬럼:...] 태그를 위해 사용
                         group_info[excel_col] = str(value) if pd.notna(value) else ""
-                        
-                        # 2. 변수명으로 저장: {변수} 태그를 위해 사용 (타입 변환 포함)
-                        if any(keyword in var_name.lower() for keyword in ['price', 'fee', 'amount', 'balance', 'cost', 'money', '금액', '비용', '요금']):
-                            try:
-                                clean_value = str(value).replace(',', '').replace('원', '').strip()
-                                group_info[var_name] = int(float(clean_value)) if clean_value and clean_value.replace('.', '').replace('-', '').isdigit() else 0
-                            except (ValueError, TypeError):
-                                group_info[var_name] = 0
-                        else:
-                            group_info[var_name] = str(value) if pd.notna(value) else ""
                 
                 self.group_data[group_info['group_id']] = group_info
                 group_id_counter += 1
@@ -148,89 +134,57 @@ class EnhancedMessageGenerator:
         self.column_mappings = {}
 
     def generate_messages(self, template, group_data, fixed_data):
-        """단순화된 로직으로 메시지를 생성"""
+        """단순화되고 안정적인 로직으로 메시지를 생성"""
         if not group_data:
             raise ValueError("그룹 데이터가 없습니다.")
         
         self.generated_messages = {}
 
         for group_id, group_info in group_data.items():
+            # 1. 모든 변수를 하나의 딕셔너리로 통합
+            variables = {}
+            variables.update(fixed_data)  # 고정 변수
+            variables.update(group_info)  # 그룹 변수 (엑셀 컬럼명 키 포함)
+
+            # 2. 특별 계산 변수 추가
+            variables['group_size'] = len(group_info.get('members', []))
+            variables['group_members_text'] = ', '.join([f"{name}님" for name in group_info.get('members', [])])
             
-            # [핵심 수정] 단순하고 직접적인 조회 함수
-            def replace_template_tags(match):
-                # 태그 타입과 내용 추출
-                tag_type = match.group(1) # '컬럼' 또는 '{'
-                content = match.group(2).strip() # '고객 부담금' 또는 'product_name'
-                formatting = match.group(3) # ':,}
-                
-                value = None
-                
-                if tag_type == '컬럼':
-                    # 컬럼 태그는 group_info에서 컬럼명으로 직접 찾음
-                    value = group_info.get(content)
-                else: # '{'
-                    # 시스템 변수 태그는 group_info와 fixed_data에서 찾음
-                    value = group_info.get(content, fixed_data.get(content))
+            # 'additional_fee_per_person'는 이제 사용되지 않는 것으로 보임 (템플릿에 따라 다름)
+            # 필요 시 아래 로직 활성화
+            # try:
+            #     exchange_fee = int(variables.get('exchange_fee', 0))
+            #     company_burden = int(variables.get('company_burden', 0))
+            #     variables['additional_fee_per_person'] = exchange_fee + company_burden
+            # except (ValueError, TypeError):
+            #     variables['additional_fee_per_person'] = 0
 
-                if value is None:
-                    return f"❌[{content}]"
+            # 3. 템플릿 태그를 치환하는 콜백 함수
+            def replacer(match):
+                # [컬럼:...] 태그 또는 {...} 태그에서 핵심 내용(키)과 포맷팅 정보 추출
+                # key는 그룹 2(컬럼) 또는 그룹 5(변수) 중 하나가 됨
+                key = match.group(2) or match.group(5)
+                formatting = match.group(3) or match.group(6)
+                
+                # 통합 딕셔너리에서 값 조회
+                value = variables.get(key, f"❌[{key}]")
+                
+                if isinstance(value, str) and value.startswith("❌"):
+                    return value
 
-                # 숫자 포맷팅 적용
+                # 숫자 포맷팅 적용 (요청 시)
                 if formatting and ':' in formatting:
                     try:
-                        num_value = int(float(str(value).replace(',', '')))
-                        return f"{num_value:,}"
+                        # 문자열 내 쉼표 등 비숫자 문자 제거 후 숫자 변환
+                        num_value = float(re.sub(r'[^\d.-]', '', str(value)))
+                        return f"{int(num_value):,}"
                     except (ValueError, TypeError):
-                        return str(value)
+                        return str(value) # 변환 실패 시 원본 값 반환
                 
                 return str(value)
-            
-            # 정규식을 통해 모든 태그 ([컬럼:...] 및 {...})를 한 번에 처리
-            # 그룹 1: 태그 타입 ('컬럼' 또는 '{')
-            # 그룹 2: 태그 내용 (컬럼명 또는 변수명)
-            # 그룹 3: 포맷팅 문자열 (예: ':,}')
-            pattern = r'\[(컬럼):([^\]:]+)(:[^\]]*)?\]|\{([^}]+?)(:[^},]+)?\}'
-            
-            # 정규식 치환을 위한 콜백 함수
-            def replacer(match):
-                # [컬럼:...] 태그가 매칭된 경우
-                if match.group(1) == '컬럼':
-                    col_name = match.group(2).strip()
-                    format_str = match.group(3)
-                    value_str = group_info.get(col_name, f"❌[{col_name}]")
-                    
-                    if format_str and ':' in format_str:
-                        try:
-                            num_value = int(float(str(value_str).replace(',', '')))
-                            return f"{num_value:,}"
-                        except (ValueError, TypeError):
-                            return value_str
-                    return value_str
-                # {...} 태그가 매칭된 경우
-                else:
-                    var_name = match.group(4).strip()
-                    format_str = match.group(5)
-                    
-                    # group_info, fixed_data, 특별 계산 변수 순으로 값 찾기
-                    if var_name in group_info:
-                        value = group_info[var_name]
-                    elif var_name in fixed_data:
-                        value = fixed_data[var_name]
-                    elif var_name == 'additional_fee_per_person':
-                        exchange_fee = group_info.get('exchange_fee', 0)
-                        company_burden = fixed_data.get('company_burden', 0)
-                        value = exchange_fee + company_burden
-                    else:
-                        value = f"❌[{var_name}]"
-                    
-                    if format_str and ':' in format_str:
-                        try:
-                            num_value = int(float(str(value).replace(',', '')))
-                            return f"{num_value:,}"
-                        except (ValueError, TypeError):
-                            return str(value)
-                    return str(value)
 
+            # [컬럼:키] 또는 {키} 형태의 모든 태그를 찾는 정규식
+            pattern = r'\[(컬럼):([^\]:]+)(:[^\]]*)?\]|(\{)([^}]+?)(:[^}]+)?\}'
             final_message = re.sub(pattern, replacer, template)
             
             self.generated_messages[group_id] = {
