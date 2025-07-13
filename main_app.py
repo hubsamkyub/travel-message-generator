@@ -244,7 +244,8 @@ def show_mapping_step():
         st.session_state.base_exchange_cell = "D2"
         st.session_state.current_exchange_cell = "D3"
         st.session_state.exchange_diff_cell = "D4"  # 추가
-        st.session_state.company_burden_cell = "D5"  # 추가
+        st.session_state.exchange_burden_cell = "D5"  # 추가
+        st.session_state.company_burden_cell = "D6"  # 추가
         st.session_state.bank_account_cell = "G2"    # 추가
         st.session_state.header_row = 9
 
@@ -270,7 +271,8 @@ def show_mapping_step():
             
         with col3:
             st.session_state.exchange_diff_cell = st.text_input("💹 환율차액 셀", value=st.session_state.exchange_diff_cell, help="예: D4")
-            st.session_state.company_burden_cell = st.text_input("💰 당사부담금 셀", value=st.session_state.company_burden_cell, help="예: D5")
+            st.session_state.company_burden_cell = st.text_input("💰 당사부담금 셀", value=st.session_state.company_burden_cell, help="예: D6")
+            st.session_state.exchange_burden_cell = st.text_input("💰 환차추가금 셀", value=st.session_state.exchange_burden_cell, help="예: D5")
 
         st.markdown("### 📊 테이블 시작점")
         st.session_state.header_row = st.number_input(
@@ -382,6 +384,7 @@ def show_mapping_step():
                 "current_exchange_rate": st.session_state.current_exchange_cell,
                 "exchange_rate_diff": st.session_state.exchange_diff_cell,  # 추가
                 "company_burden": st.session_state.company_burden_cell,     # 추가
+                "exchange_burden": st.session_state.exchange_burden_cell,     # 추가
                 "bank_account": st.session_state.bank_account_cell          # 추가
             },
             "table_settings": {
@@ -658,6 +661,7 @@ def show_template_step():
             ("current_exchange_rate", "현재환율", "현재 환율"),
             ("exchange_rate_diff", "환율차액", "환율 변동 차액"),      # 추가
             ("company_burden", "당사부담금", "회사가 부담하는 금액"),    # 추가
+            ("exchange_burden", "환차추가금", "환율 차액 추가금"),    # 추가
             ("bank_account", "입금계좌", "계좌 정보")                   # 추가
         ]
         
@@ -762,6 +766,7 @@ def show_template_step():
             excel_columns,
             ["product_name", "payment_due_date", "base_exchange_rate", 
             "current_exchange_rate", "exchange_rate_diff", "company_burden",  # 추가
+            "exchange_burden",
             "bank_account", "group_members_text", "group_size",               # 추가
             "additional_fee_per_person"]
         )
