@@ -906,6 +906,9 @@ def process_data_and_generate_messages():
                                    sheet_name=st.session_state.selected_sheet, 
                                    header=header_row)
         
+        # [해결 코드] 여기서도 컬럼명 공백을 제거합니다.
+        customer_df.columns = customer_df.columns.str.strip()
+        
         status_text.text("📊 테이블 데이터 로드 완료...")
         progress_bar.progress(40)
         
@@ -956,7 +959,7 @@ def process_data_and_generate_messages():
     except Exception as e:
         show_error_details(e, "스마트 데이터 처리 및 메시지 생성 중")
         raise
-
+    
 def show_results_step():
     st.header("5️⃣ 결과 확인 및 활용")
 
