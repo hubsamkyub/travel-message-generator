@@ -69,7 +69,7 @@ class EnhancedDataProcessor:
         return fixed_data
     
     def process_group_data_dynamic(self, customer_df, column_mappings):
-        """그룹 데이터 처리 (동적 매핑 및 단순화된 키 저장)"""
+        """그룹 데이터 처리 (동적 매핑 및 group_size 추가)"""
         try:
             self.group_data = {}
             reverse_mappings = {v: k for k, v in column_mappings.items()}
@@ -103,12 +103,14 @@ class EnhancedDataProcessor:
                 representative = group_members.iloc[0]
                 members_list = group_members[name_col].tolist()
 
+                # [해결 코드] 여기에 'group_size'를 추가했습니다.
                 group_info = {
                     'group_id': f"G{group_id_counter:03d}",
                     'team_name': str(team_name),
                     'sender_group': str(sender_group),
                     'sender': str(representative[name_col]),
                     'members': [str(name) for name in members_list],
+                    'group_size': len(members_list), # 인원수 추가
                     'excel_order': group_order[group_key]
                 }
 
@@ -125,7 +127,7 @@ class EnhancedDataProcessor:
 
         except Exception as e:
             raise Exception(f"동적 그룹 데이터 처리 중 오류: {str(e)}")
-
+        
 class EnhancedMessageGenerator:
     """향상된 메시지 생성 클래스"""
     
