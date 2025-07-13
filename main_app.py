@@ -227,6 +227,7 @@ def show_file_upload_step():
             st.markdown("**📥 샘플 파일 다운로드**")
             st.markdown("`create_sample_data.py`를 실행하여 샘플 엑셀 파일을 생성할 수 있습니다.")
 
+
 def show_mapping_step():
     st.header("2️⃣ 매핑 설정")
 
@@ -289,7 +290,11 @@ def show_mapping_step():
         
         try:
             header_row = st.session_state.header_row
-            df_table = pd.read_excel(st.session_state.uploaded_file, sheet_name=st.session_state.selected_sheet, header=header_row - 1).dropna(how='all', axis=1)
+            # 빈 열이 삭제되지 않도록 .dropna(how='all', axis=1) 제거
+            df_table = pd.read_excel(st.session_state.uploaded_file, sheet_name=st.session_state.selected_sheet, header=header_row - 1)
+            # 컬럼명의 앞뒤 공백 제거
+            df_table.columns = df_table.columns.str.strip()
+            
             available_columns = ["👆 선택하세요"] + df_table.columns.tolist()
 
             # 자동 매핑 시도 (처음 한 번만)
@@ -409,7 +414,7 @@ def show_mapping_step():
         st.session_state.current_step = 3
         st.success("✅ 간단 매핑이 완료되었습니다! 이제 스마트 템플릿을 설정해보세요.")
         st.rerun()
-           
+                  
 def preview_fixed_data(fixed_mapping):
     """고정 정보 미리보기"""
     try:
@@ -503,19 +508,8 @@ def show_template_step():
             st.session_state.smart_template = saved_template
             st.success("✅ 이전에 저장한 템플릿을 자동으로 불러왔습니다!")
         else:
-            # 기본 템플릿
-            st.session_state.smart_template = """[여행처럼]
-{product_name} 잔금 안내
-
-안녕하세요, 여행처럼입니다.
-{product_name} 예약 건 관련하여 잔금 결제를 요청드립니다.
-
-👥 대상: {group_members_text}
-💰 잔금: [컬럼:잔금:,]원
-📅 완납일: {payment_due_date}
-
-계좌: [컬럼:계좌번호]
-감사합니다."""
+            # 기본 템플릿 제거하고 빈 문자열로 초기화
+            st.session_state.smart_template = ""
 
     # 편집 중인 템플릿을 위한 임시 변수 초기화
     if 'temp_template_editing' not in st.session_state:
@@ -534,7 +528,8 @@ def show_template_step():
             height=350, 
             key="template_editor_area",
             label_visibility="collapsed",
-            help="템플릿을 편집한 후 '적용하기' 버튼을 클릭하세요."
+            help="템플릿을 편집한 후 '적용하기' 버튼을 클릭하세요.",
+            placeholder="여기에 템플릿을 입력하거나 '빠른 삽입 패널'을 사용하여 변수를 추가하세요."
         )
         
         # 편집된 내용을 임시로 저장
@@ -835,7 +830,7 @@ def show_template_step():
             **다음 단계 진행 불가:**
             → 편집 내용을 먼저 적용하세요
             """)
-                        
+                                 
 def validate_smart_template(template, excel_columns, system_variables):
     """스마트 템플릿 검증 (숫자 포맷 지원)"""
     errors = []
