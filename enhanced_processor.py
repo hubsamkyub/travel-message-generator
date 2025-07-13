@@ -1,5 +1,6 @@
 import pandas as pd
 import re
+from collections import defaultdict
 from datetime import datetime
 
 class EnhancedDataProcessor:
@@ -289,7 +290,7 @@ class EnhancedMessageGenerator:
                 for part in re.split(r'(\d+)', str(text))]
 
     def generate_messages(self, template, group_data, fixed_data):
-        """스마트 템플릿을 지원하는 메시지 생성 함수 (오류 수정 버전)"""
+        """스마트 템플릿을 지원하는 메시지 생성 함수 (최종 수정)"""
         if not group_data:
             raise ValueError("그룹 데이터가 없습니다.")
         
@@ -297,69 +298,53 @@ class EnhancedMessageGenerator:
             self.generated_messages = {}
             self.final_messages = {}
             
-            # 컬럼명과 변수명을 매핑하는 딕셔너리 (정확한 조회를 위해 사용)
             excel_col_to_var_name = self.column_mappings
 
             for group_id, group_info in group_data.items():
                 
-                # --- 1. [컬럼:...] 태그를 실제 값으로 치환하는 함수 ---
                 def replace_column_tag(match):
-                    col_name = match.group(1)  # Excel 컬럼명 (예: "고객 부담금")
-                    format_str = match.group(2) # 포맷 문자열 (예: ":,")
-                    
-                    # 매핑 정보에서 정확한 변수명 찾기
+                    col_name = match.group(1)
+                    format_str = match.group(2)
                     var_name = excel_col_to_var_name.get(col_name)
                     
                     if var_name and var_name in group_info:
                         value = group_info[var_name]
-                        
-                        # 숫자 포맷팅 적용 (format_str이 있는 경우)
                         if format_str and (format_str.strip() == ':' or format_str.strip() == ':,') :
                             try:
                                 num_value = int(float(str(value).replace(',', '')))
                                 return f"{num_value:,}"
                             except (ValueError, TypeError):
-                                return str(value) # 숫자 변환 실패 시 원본 값 반환
-                        
-                        return str(value) # 포맷팅이 없으면 문자열로 반환
+                                return str(value)
+                        return str(value)
                     else:
-                        # 매핑 정보에 없으면 오류 표시
                         return f"❌[{col_name}]"
 
-                # 정규식을 사용해 [컬럼:컬럼명] 또는 [컬럼:컬럼명:,] 형태의 모든 태그를 한 번에 치환
                 processed_template = re.sub(r'\[컬럼:([^\]:]+)(:[^\]]*)?\]', replace_column_tag, template)
 
-                # --- 2. {변수명} 시스템 변수 처리 ---
                 variables = {}
                 variables.update(fixed_data)
                 variables.update(group_info)
 
-                # 특별 계산 변수
                 variables['group_size'] = len(group_info.get('members', []))
                 variables['group_members_text'] = ', '.join([f"{name}님" for name in group_info.get('members', [])])
                 
                 current_exchange_fee = variables.get('exchange_fee', 0)
-                # [수정된 부분] exchange_info 대신 variables에서 직접 값을 가져옵니다.
                 current_company_burden = variables.get('company_burden', 0)
                 variables['additional_fee_per_person'] = current_exchange_fee + current_company_burden
                 
-                # 숫자 포맷팅을 위한 타입 변환
                 number_format_vars = set(re.findall(r'\{(\w+):[^}]*,[^}]*\}', processed_template))
                 for var in number_format_vars:
                     if var in variables:
                         try:
                             variables[var] = int(float(str(variables[var]).replace(',', '')))
                         except (ValueError, TypeError):
-                            variables[var] = 0 # 숫자 변환 실패 시 0으로 처리
+                            variables[var] = 0
 
-                # --- 3. 최종 메시지 생성 ---
                 try:
-                    # format_map을 사용하여 없는 키에 대한 오류 방지
                     final_message = processed_template.format_map(defaultdict(str, variables))
                 except Exception as e:
                     final_message = f"오류: 메시지를 생성하는 중 문제가 발생했습니다. ({str(e)})"
                 
-                # 결과 저장
                 self.generated_messages[group_id] = {
                     'message': final_message,
                     'group_info': group_info,
@@ -373,7 +358,6 @@ class EnhancedMessageGenerator:
             }
             
         except Exception as e:
-            # traceback을 추가하여 더 상세한 오류 로깅
             import traceback
             error_details = traceback.format_exc()
             raise Exception(f"메시지 생성 중 오류 발생: {str(e)}\n{error_details}")
@@ -383,7 +367,6 @@ class EnhancedMessageGenerator:
         if not self.generated_messages:
             return []
         
-        # 엑셀 순서를 기준으로 정렬
         sorted_items = sorted(self.generated_messages.items(), 
                             key=lambda item: item[1]['group_info'].get('excel_order', 0))
         return sorted_items
