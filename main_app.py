@@ -239,10 +239,13 @@ def show_mapping_step():
 
     # 고정 정보 기본값 설정
     if 'product_name_cell' not in st.session_state:
-        st.session_state.product_name_cell = "D2"
-        st.session_state.payment_due_cell = "D3"
-        st.session_state.base_exchange_cell = "F2"
-        st.session_state.current_exchange_cell = "F3"
+        st.session_state.product_name_cell = "B2"
+        st.session_state.payment_due_cell = "B3"
+        st.session_state.base_exchange_cell = "D2"
+        st.session_state.current_exchange_cell = "D3"
+        st.session_state.exchange_diff_cell = "D4"  # 추가
+        st.session_state.company_burden_cell = "D5"  # 추가
+        st.session_state.bank_account_cell = "G2"    # 추가
         st.session_state.header_row = 9
 
     # 간단한 2단계 구성
@@ -253,13 +256,21 @@ def show_mapping_step():
         st.markdown("### 📋 고정 정보 셀 주소")
         st.info("💡 엑셀에서 상품명, 날짜, 환율 등이 저장된 셀 주소를 입력하세요.")
         
-        col1, col2 = st.columns(2)
+        # 3개 컬럼으로 구성
+        col1, col2, col3 = st.columns(3)
+        
         with col1:
-            st.session_state.product_name_cell = st.text_input("🏷️ 상품명 셀", value=st.session_state.product_name_cell, help="예: D2")
-            st.session_state.payment_due_cell = st.text_input("📅 잔금완납일 셀", value=st.session_state.payment_due_cell, help="예: D3")
+            st.session_state.product_name_cell = st.text_input("🏷️ 상품명 셀", value=st.session_state.product_name_cell, help="예: B2")
+            st.session_state.payment_due_cell = st.text_input("📅 잔금완납일 셀", value=st.session_state.payment_due_cell, help="예: B3")
+            st.session_state.bank_account_cell = st.text_input("🏦 입금계좌 셀", value=st.session_state.bank_account_cell, help="예: G2")
+            
         with col2:
-            st.session_state.base_exchange_cell = st.text_input("💱 기준환율 셀", value=st.session_state.base_exchange_cell, help="예: F2")
-            st.session_state.current_exchange_cell = st.text_input("📈 현재환율 셀", value=st.session_state.current_exchange_cell, help="예: F3")
+            st.session_state.base_exchange_cell = st.text_input("💱 기준환율 셀", value=st.session_state.base_exchange_cell, help="예: D2")
+            st.session_state.current_exchange_cell = st.text_input("📈 현재환율 셀", value=st.session_state.current_exchange_cell, help="예: D3")
+            
+        with col3:
+            st.session_state.exchange_diff_cell = st.text_input("💹 환율차액 셀", value=st.session_state.exchange_diff_cell, help="예: D4")
+            st.session_state.company_burden_cell = st.text_input("💰 당사부담금 셀", value=st.session_state.company_burden_cell, help="예: D5")
 
         st.markdown("### 📊 테이블 시작점")
         st.session_state.header_row = st.number_input(
@@ -368,7 +379,10 @@ def show_mapping_step():
                 "product_name": st.session_state.product_name_cell,
                 "payment_due_date": st.session_state.payment_due_cell,
                 "base_exchange_rate": st.session_state.base_exchange_cell,
-                "current_exchange_rate": st.session_state.current_exchange_cell
+                "current_exchange_rate": st.session_state.current_exchange_cell,
+                "exchange_rate_diff": st.session_state.exchange_diff_cell,  # 추가
+                "company_burden": st.session_state.company_burden_cell,     # 추가
+                "bank_account": st.session_state.bank_account_cell          # 추가
             },
             "table_settings": {
                 "header_row": st.session_state.header_row
@@ -392,7 +406,7 @@ def show_mapping_step():
         st.session_state.current_step = 3
         st.success("✅ 간단 매핑이 완료되었습니다! 이제 스마트 템플릿을 설정해보세요.")
         st.rerun()
-        
+           
 def preview_fixed_data(fixed_mapping):
     """고정 정보 미리보기"""
     try:
@@ -457,7 +471,7 @@ def show_template_step():
     # --- 1. 엑셀 데이터 및 컬럼 정보 준비 ---
     try:
         header_row = st.session_state.mapping_data.get('table_settings', {}).get('header_row', 1)
-        df_table = pd.read_excel(st.session_state.uploaded_file, sheet_name=st.session_state.selected_sheet, header=header_row - 1)
+        df_table = pd.read_excel(st.session_state.uploaded_file, sheet_name=st.session_state.selected_sheet, header=header_row - 1, dtype=str).fillna('')
         excel_columns = df_table.columns.tolist()
         
         # 미리보기용 첫 번째 행 데이터
@@ -478,8 +492,9 @@ def show_template_step():
 
     # --- 2. 파일별 템플릿 자동 로드 ---
     file_template_key = f"template_{st.session_state.uploaded_file.name}_{st.session_state.selected_sheet}"
+    
+    # 템플릿 초기화 (한 번만)
     if 'smart_template' not in st.session_state:
-        # 저장된 템플릿이 있는지 확인
         saved_template = template_manager.load_file_template(file_template_key)
         if saved_template:
             st.session_state.smart_template = saved_template
@@ -499,38 +514,70 @@ def show_template_step():
 계좌: [컬럼:계좌번호]
 감사합니다."""
 
+    # 편집 중인 템플릿을 위한 임시 변수 초기화
+    if 'temp_template_editing' not in st.session_state:
+        st.session_state.temp_template_editing = st.session_state.smart_template
+
     # --- 3. 메인 편집기 및 미리보기 ---
     col_editor, col_preview = st.columns([1, 1], gap="large")
     
     with col_editor:
         st.markdown("##### ✍️ 스마트 템플릿 편집기")
         
-        # 템플릿 편집기
-        template = st.text_area(
+        # 텍스트 에디터 - key를 고정하여 값이 유지되도록 함
+        template_input = st.text_area(
             "Smart Template Editor", 
-            value=st.session_state.smart_template, 
+            value=st.session_state.temp_template_editing,
             height=350, 
-            key="smart_template_editor", 
+            key="template_editor_area",
             label_visibility="collapsed",
-            help="아래 빠른 삽입 패널을 활용하세요!"
+            help="템플릿을 편집한 후 '적용하기' 버튼을 클릭하세요."
         )
-        st.session_state.smart_template = template
         
-        # 자동 저장 버튼
-        col_save, col_stats = st.columns([1, 2])
-        if col_save.button("💾 자동저장", help="현재 파일에 연결하여 템플릿을 저장합니다"):
-            template_manager.save_file_template(file_template_key, template)
-            st.success("✅ 템플릿이 저장되었습니다!")
+        # 편집된 내용을 임시로 저장
+        st.session_state.temp_template_editing = template_input
+        
+        # 버튼 영역
+        col_apply, col_save, col_stats = st.columns([1, 1, 2])
+        
+        # 적용하기 버튼
+        apply_clicked = col_apply.button(
+            "✅ 적용하기", 
+            type="primary", 
+            help="편집한 내용을 적용하여 미리보기를 갱신합니다",
+            use_container_width=True
+        )
+        
+        if apply_clicked:
+            # 편집된 내용을 실제 템플릿으로 적용
+            st.session_state.smart_template = st.session_state.temp_template_editing
+            st.success("✅ 템플릿이 적용되었습니다!")
+        
+        # 파일 저장 버튼
+        save_clicked = col_save.button(
+            "💾 파일저장", 
+            help="현재 적용된 템플릿을 파일에 저장합니다",
+            use_container_width=True
+        )
+        
+        if save_clicked:
+            template_manager.save_file_template(file_template_key, st.session_state.smart_template)
+            st.success("✅ 템플릿이 파일에 저장되었습니다!")
         
         # 템플릿 통계
-        char_count = len(template)
-        sms_type = "LMS" if char_count > 90 else "SMS"
-        col_stats.metric("📊 상태", f"{char_count}자 | {sms_type}")
+        current_char_count = len(st.session_state.temp_template_editing)
+        current_sms_type = "LMS" if current_char_count > 90 else "SMS"
+        col_stats.metric("📊 편집 중", f"{current_char_count}자 | {current_sms_type}")
+        
+        # 변경사항 알림
+        if st.session_state.temp_template_editing != st.session_state.smart_template:
+            st.info("💡 편집한 내용이 있습니다. '적용하기' 버튼을 눌러 미리보기를 갱신하세요.")
     
     with col_preview:
-        show_smart_template_preview(template, preview_data, excel_columns)
+        # 현재 적용된 템플릿으로 미리보기 표시
+        show_smart_template_preview(st.session_state.smart_template, preview_data, excel_columns)
 
-    # --- 4. 빠른 삽입 패널 (메인 화면) ---
+    # --- 4. 빠른 삽입 패널 ---
     st.markdown("---")
     st.markdown("### 🚀 빠른 삽입 패널")
     
@@ -540,95 +587,100 @@ def show_template_step():
     
     # 삽입 대기 영역
     if st.session_state.insert_ready_text:
-        st.success("📋 복사해서 원하는 위치에 붙여넣으세요:")
+        st.success("📋 아래 코드를 복사하여 템플릿의 원하는 위치에 붙여넣으세요:")
         
-        # 선택 가능한 코드 표시
-        col_code, col_clear = st.columns([4, 1])
+        col_code, col_clear = st.columns([5, 1])
         with col_code:
+            # 복사하기 쉽도록 code 블록으로 표시
             st.code(st.session_state.insert_ready_text, language="text")
         with col_clear:
-            st.write("")  # 여백
             if st.button("❌ 닫기", use_container_width=True):
                 st.session_state.insert_ready_text = ""
                 st.rerun()
     
-    # 빠른 삽입 버튼들
+    # 빠른 삽입 탭
     tab_columns, tab_fixed, tab_auto = st.tabs(["📊 엑셀 컬럼", "🏷️ 고정 정보", "⚡ 자동 계산"])
     
     with tab_columns:
-        st.markdown("##### 📋 엑셀 컬럼 목록 (클릭하여 삽입)")
+        st.markdown("##### 📋 엑셀 컬럼 목록")
         
         # 검색 기능
-        search_term = st.text_input("🔍 컬럼 검색", placeholder="컬럼명 검색...", key="quick_search")
+        search_term = st.text_input("🔍 컬럼 검색", placeholder="컬럼명 입력...", key="col_search")
         filtered_columns = [col for col in excel_columns if search_term.lower() in str(col).lower()] if search_term else excel_columns
         
-        # 컬럼을 3열씩 배치
-        for i in range(0, len(filtered_columns), 3):
-            cols = st.columns(3)
-            for j, col in enumerate(filtered_columns[i:i+3]):
-                if j < len(cols):
-                    with cols[j]:
-                        # 컬럼 정보
-                        preview_val = str(preview_data.get(col, ""))[:20] + ("..." if len(str(preview_data.get(col, ""))) > 20 else "")
-                        
-                        # 숫자 판단
-                        sample_value = preview_data.get(col, "")
-                        is_numeric = False
-                        try:
-                            if isinstance(sample_value, (int, float)):
-                                is_numeric = True
-                            elif isinstance(sample_value, str) and sample_value.replace(',', '').replace('.', '').replace('-', '').isdigit():
-                                is_numeric = True
-                        except:
-                            pass
-                        
-                        st.markdown(f"**{col}**")
-                        st.caption(f"예시: {preview_val}")
-                        
-                        # 텍스트 버튼
-                        if st.button(f"📄 텍스트", key=f"quick_text_{col}", use_container_width=True):
-                            st.session_state.insert_ready_text = f"[컬럼:{col}]"
-                            st.rerun()
-                        
-                        # 숫자 버튼 (숫자로 추정되는 경우만)
-                        if is_numeric:
-                            if st.button(f"🔢 숫자", key=f"quick_num_{col}", use_container_width=True):
-                                st.session_state.insert_ready_text = f"[컬럼:{col}:,]"
+        if not filtered_columns:
+            st.info("검색 결과가 없습니다.")
+        else:
+            # 3열로 표시
+            for i in range(0, len(filtered_columns), 3):
+                cols = st.columns(3)
+                for j, col in enumerate(filtered_columns[i:i+3]):
+                    if j < len(cols):
+                        with cols[j]:
+                            # 샘플 값 표시
+                            sample_val = str(preview_data.get(col, ""))[:15]
+                            if len(str(preview_data.get(col, ""))) > 15:
+                                sample_val += "..."
+                            
+                            # 숫자 타입 추정
+                            is_numeric = False
+                            sample_value = preview_data.get(col, "")
+                            try:
+                                if isinstance(sample_value, (int, float)):
+                                    is_numeric = True
+                                elif isinstance(sample_value, str):
+                                    clean_val = sample_value.replace(',', '').replace('.', '').replace('-', '').strip()
+                                    if clean_val and clean_val.isdigit():
+                                        is_numeric = True
+                            except:
+                                pass
+                            
+                            st.markdown(f"**{col}**")
+                            st.caption(f"예: {sample_val}")
+                            
+                            # 텍스트 삽입 버튼
+                            if st.button(f"📄 텍스트", key=f"txt_{col}_{i}_{j}", use_container_width=True):
+                                st.session_state.insert_ready_text = f"[컬럼:{col}]"
                                 st.rerun()
-                        else:
-                            # 빈 공간 유지
-                            st.write("")
+                            
+                            # 숫자 삽입 버튼 (숫자형일 때만)
+                            if is_numeric:
+                                if st.button(f"🔢 숫자", key=f"num_{col}_{i}_{j}", use_container_width=True):
+                                    st.session_state.insert_ready_text = f"[컬럼:{col}:,]"
+                                    st.rerun()
     
     with tab_fixed:
-        st.markdown("##### 🏷️ 고정 정보")
+        st.markdown("##### 🏷️ 고정 정보 변수")
         fixed_vars = [
-            ("product_name", "상품명", "상품 이름"),
-            ("payment_due_date", "잔금완납일", "결제 마감일"),
-            ("base_exchange_rate", "기준환율", "계약 시 환율"),
-            ("current_exchange_rate", "현재환율", "현재 시점 환율")
+            ("product_name", "상품명", "여행 상품 이름"),
+            ("payment_due_date", "잔금완납일", "잔금 납부 마감일"),
+            ("base_exchange_rate", "기준환율", "계약 당시 환율"),
+            ("current_exchange_rate", "현재환율", "현재 환율")
         ]
         
         cols = st.columns(2)
-        for i, (var_code, var_name, description) in enumerate(fixed_vars):
+        for i, (var_code, var_name, desc) in enumerate(fixed_vars):
             with cols[i % 2]:
-                if st.button(f"🏷️ {var_name}", key=f"quick_fixed_{var_code}", help=description, use_container_width=True):
+                if st.button(f"🏷️ {var_name}", key=f"fixed_{var_code}", help=desc, use_container_width=True):
                     st.session_state.insert_ready_text = f"{{{var_code}}}"
                     st.rerun()
     
     with tab_auto:
-        st.markdown("##### ⚡ 자동 계산")
+        st.markdown("##### ⚡ 자동 계산 변수")
         auto_vars = [
             ("group_members_text", "그룹 멤버", "홍길동님, 김철수님 형태"),
-            ("group_size", "인원 수", "그룹의 총 인원 (숫자)"),
-            ("additional_fee_per_person", "1인 추가요금", "환율 변동으로 인한 추가 요금")
+            ("group_size", "인원 수", "그룹의 총 인원"),
+            ("additional_fee_per_person", "1인 추가요금", "환율 변동 추가 요금")
         ]
         
         cols = st.columns(2)
-        for i, (var_code, var_name, description) in enumerate(auto_vars):
+        for i, (var_code, var_name, desc) in enumerate(auto_vars):
             with cols[i % 2]:
-                if st.button(f"🔢 {var_name}", key=f"quick_auto_{var_code}", help=description, use_container_width=True):
-                    if var_code in ["group_size", "additional_fee_per_person"]:
-                        st.session_state.insert_ready_text = f"{{{var_code}:,}}"  # 숫자 포맷
+                is_numeric = var_code in ["group_size", "additional_fee_per_person"]
+                icon = "🔢" if is_numeric else "📝"
+                if st.button(f"{icon} {var_name}", key=f"auto_{var_code}", help=desc, use_container_width=True):
+                    if is_numeric:
+                        st.session_state.insert_ready_text = f"{{{var_code}:,}}"
                     else:
                         st.session_state.insert_ready_text = f"{{{var_code}}}"
                     st.rerun()
@@ -638,116 +690,143 @@ def show_template_step():
         tab_upload, tab_library = st.tabs(["📤 파일 업로드", "🗂️ 내 라이브러리"])
         
         with tab_upload:
-            st.markdown("##### 📄 템플릿 파일 업로드")
-            uploaded_template_file = st.file_uploader(
-                "텍스트 파일(.txt)을 업로드하세요", type=['txt'],
-                help="기존에 작성한 템플릿 파일을 불러올 수 있습니다"
+            st.markdown("##### 템플릿 파일 업로드")
+            uploaded_file = st.file_uploader(
+                "텍스트 파일(.txt) 선택", 
+                type=['txt'],
+                help="저장된 템플릿 파일을 불러옵니다"
             )
             
-            if uploaded_template_file is not None:
+            if uploaded_file is not None:
                 try:
-                    uploaded_content = uploaded_template_file.getvalue().decode("utf-8")
+                    content = uploaded_file.getvalue().decode("utf-8")
+                    st.text_area("파일 내용", content, height=200, disabled=True)
                     
-                    col_apply, col_preview_file = st.columns(2)
-                    if col_apply.button("✅ 템플릿 적용", type="primary"):
-                        st.session_state.smart_template = uploaded_content
-                        st.success("템플릿이 적용되었습니다!")
+                    if st.button("📥 이 템플릿 적용", type="primary"):
+                        st.session_state.smart_template = content
+                        st.session_state.temp_template_editing = content
+                        st.success("✅ 파일의 템플릿을 적용했습니다!")
                         st.rerun()
-                    
-                    # 업로드된 파일 미리보기
-                    st.text_area("파일 내용 미리보기", uploaded_content, height=200, disabled=True)
-                    
+                        
                 except Exception as e:
                     st.error(f"파일 읽기 오류: {e}")
         
         with tab_library:
-            st.markdown("##### 🗃️ 저장된 템플릿 관리")
-            user_templates = template_manager.get_user_template_list()
+            st.markdown("##### 저장된 템플릿")
+            templates = template_manager.get_user_template_list()
             
-            if user_templates:
-                template_options = {t['name']: t['id'] for t in user_templates}
-                selected_template_name = st.selectbox("저장된 템플릿", ["선택 안 함"] + list(template_options.keys()))
+            if templates:
+                template_dict = {t['name']: t['id'] for t in templates}
+                selected = st.selectbox("템플릿 선택", ["선택 안 함"] + list(template_dict.keys()))
                 
-                col_load, col_delete = st.columns(2)
-                if col_load.button("📂 불러오기", disabled=(selected_template_name == "선택 안 함")):
-                    template_id = template_options[selected_template_name]
-                    loaded_data = template_manager.load_template(template_id)
-                    if loaded_data:
-                        st.session_state.smart_template = loaded_data['content']
-                        st.success(f"'{selected_template_name}'을(를) 불러왔습니다.")
+                col1, col2 = st.columns(2)
+                if col1.button("📂 불러오기", disabled=(selected == "선택 안 함")):
+                    tid = template_dict[selected]
+                    tdata = template_manager.load_template(tid)
+                    if tdata:
+                        st.session_state.smart_template = tdata['content']
+                        st.session_state.temp_template_editing = tdata['content']
+                        st.success(f"✅ '{selected}' 템플릿을 불러왔습니다!")
                         st.rerun()
                 
-                if col_delete.button("🗑️ 삭제", disabled=(selected_template_name == "선택 안 함")):
-                    template_id = template_options[selected_template_name]
-                    if template_manager.delete_template(template_id):
-                        st.success(f"'{selected_template_name}'을(를) 삭제했습니다.")
+                if col2.button("🗑️ 삭제", disabled=(selected == "선택 안 함")):
+                    tid = template_dict[selected]
+                    if template_manager.delete_template(tid):
+                        st.success(f"✅ '{selected}' 템플릿을 삭제했습니다!")
                         st.rerun()
             else:
                 st.info("저장된 템플릿이 없습니다.")
             
             st.markdown("---")
-            new_template_name = st.text_input("새 템플릿으로 저장")
-            if st.button("💾 라이브러리에 저장", disabled=not new_template_name):
+            new_name = st.text_input("새 템플릿 이름")
+            if st.button("💾 현재 템플릿을 라이브러리에 저장", disabled=not new_name):
                 try:
-                    template_id = template_manager.create_user_template(
-                        name=new_template_name,
+                    tid = template_manager.create_user_template(
+                        name=new_name,
                         content=st.session_state.smart_template
                     )
-                    st.success(f"'{new_template_name}' 템플릿을 라이브러리에 저장했습니다.")
+                    st.success(f"✅ '{new_name}' 템플릿을 저장했습니다!")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"템플릿 저장 실패: {e}")
+                    st.error(f"저장 실패: {e}")
 
     # --- 6. 네비게이션 ---
     st.markdown("---")
     
     # 템플릿 검증
-    validation_result = validate_smart_template(template, excel_columns, ["product_name", "payment_due_date", "base_exchange_rate", "current_exchange_rate", "group_members_text", "group_size", "additional_fee_per_person"])
+    validation = validate_smart_template(
+        st.session_state.smart_template, 
+        excel_columns,
+        ["product_name", "payment_due_date", "base_exchange_rate", 
+         "current_exchange_rate", "group_members_text", "group_size", 
+         "additional_fee_per_person"]
+    )
     
     nav_cols = st.columns([1, 1])
-    if nav_cols[0].button("⬅️ 이전 단계 (매핑 설정)", use_container_width=True):
+    
+    if nav_cols[0].button("⬅️ 이전 단계", use_container_width=True):
         st.session_state.current_step = 2
         st.rerun()
     
-    can_proceed = not validation_result.get('errors', [])
-    if nav_cols[1].button("➡️ 다음 단계 (메시지 생성)", type="primary", use_container_width=True, disabled=not can_proceed):
-        # 자동저장 후 다음 단계
-        template_manager.save_file_template(file_template_key, template)
+    # 진행 가능 여부 체크
+    can_proceed = not validation.get('errors', [])
+    
+    # 편집 중인 내용이 있는데 적용하지 않은 경우
+    if st.session_state.temp_template_editing != st.session_state.smart_template:
+        st.warning("⚠️ 편집한 내용을 적용하지 않았습니다. '적용하기' 버튼을 먼저 클릭하세요.")
+        can_proceed = False
+    
+    if nav_cols[1].button(
+        "➡️ 다음 단계", 
+        type="primary", 
+        use_container_width=True, 
+        disabled=not can_proceed
+    ):
+        # 템플릿을 파일에 자동 저장
+        template_manager.save_file_template(file_template_key, st.session_state.smart_template)
         st.session_state.template = st.session_state.smart_template
         st.session_state.current_step = 4
-        st.success("✅ 스마트 템플릿이 저장되고 다음 단계로 이동합니다!")
+        st.success("✅ 템플릿이 저장되고 다음 단계로 이동합니다!")
         st.rerun()
     
-    # 오류가 있을 때만 표시
-    if validation_result.get('errors'):
+    # 검증 오류 표시
+    if validation.get('errors'):
         st.error("**⚠️ 템플릿 오류:**")
-        for error in validation_result['errors']:
+        for error in validation['errors']:
             st.write(f"• {error}")
 
     # --- 7. 사이드바 도움말 ---
     with st.sidebar:
-        st.markdown("### 💡 사용법")
+        st.markdown("### 💡 템플릿 편집 도움말")
         st.markdown("""
-        **🚀 빠른 삽입 패널 사용:**
-        1. 아래 탭에서 원하는 항목 클릭
-        2. 복사용 코드가 나타남
-        3. 코드를 복사해서 템플릿에 붙여넣기
+        **✏️ 편집 방법:**
+        1. 편집기에서 내용 수정
+        2. **'적용하기'** 버튼 클릭
+        3. 미리보기에서 결과 확인
         
-        **📋 문법:**
-        - `[컬럼:이름]` → 텍스트 값
-        - `[컬럼:금액:,]` → 숫자 값 (1,000 형태)
-        - `{변수명}` → 고정/계산 값
+        **📌 중요:**
+        - 편집 후 반드시 '적용하기' 클릭
+        - 미리보기는 적용된 내용만 표시
+        - 다음 단계 전 자동 저장됨
+        
+        **🔤 템플릿 문법:**
+        - `[컬럼:컬럼명]` - 텍스트 값
+        - `[컬럼:컬럼명:,]` - 숫자 (천단위)
+        - `{변수명}` - 시스템 변수
         """)
         
         with st.expander("🚨 문제 해결"):
             st.markdown("""
-            **오류 해결:**
-            - 존재하지 않는 컬럼명 → 빠른 삽입 패널 활용
-            - 숫자 포맷 오류 → 텍스트/숫자 버튼 구분
-            - 미리보기 오류 → 템플릿 문법 확인
+            **편집 내용이 사라짐:**
+            → '적용하기' 버튼을 클릭하세요
+            
+            **미리보기가 갱신 안됨:**
+            → '적용하기' 후 확인하세요
+            
+            **다음 단계 진행 불가:**
+            → 편집 내용을 먼저 적용하세요
             """)
-
-
+                        
 def validate_smart_template(template, excel_columns, system_variables):
     """스마트 템플릿 검증 (숫자 포맷 지원)"""
     errors = []
