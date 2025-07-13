@@ -655,7 +655,10 @@ def show_template_step():
             ("product_name", "상품명", "여행 상품 이름"),
             ("payment_due_date", "잔금완납일", "잔금 납부 마감일"),
             ("base_exchange_rate", "기준환율", "계약 당시 환율"),
-            ("current_exchange_rate", "현재환율", "현재 환율")
+            ("current_exchange_rate", "현재환율", "현재 환율"),
+            ("exchange_rate_diff", "환율차액", "환율 변동 차액"),      # 추가
+            ("company_burden", "당사부담금", "회사가 부담하는 금액"),    # 추가
+            ("bank_account", "입금계좌", "계좌 정보")                   # 추가
         ]
         
         cols = st.columns(2)
@@ -755,12 +758,13 @@ def show_template_step():
     
     # 템플릿 검증
     validation = validate_smart_template(
-        st.session_state.smart_template, 
-        excel_columns,
-        ["product_name", "payment_due_date", "base_exchange_rate", 
-         "current_exchange_rate", "group_members_text", "group_size", 
-         "additional_fee_per_person"]
-    )
+            st.session_state.smart_template, 
+            excel_columns,
+            ["product_name", "payment_due_date", "base_exchange_rate", 
+            "current_exchange_rate", "exchange_rate_diff", "company_burden",  # 추가
+            "bank_account", "group_members_text", "group_size",               # 추가
+            "additional_fee_per_person"]
+        )
     
     nav_cols = st.columns([1, 1])
     
